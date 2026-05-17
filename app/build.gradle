@@ -63,19 +63,3 @@ dependencies {
     googleImplementation 'com.google.android.gms:play-services-ads:24.6.0'
     googleImplementation 'com.google.android.play:review-ktx:2.0.2'
 }
-
-tasks.register('copyFirebaseConfig', Copy) {
-    from '../../environment/firebase'
-    into '.'
-    include 'passport-reader.json'
-    rename('passport-reader.json', 'google-services.json')
-}
-afterEvaluate {
-    tasks.matching { it.name.contains('Google') }.configureEach { task ->
-        if (task.name.contains('Regular')) {
-            task.enabled false
-        } else {
-            task.dependsOn copyFirebaseConfig
-        }
-    }
-}
