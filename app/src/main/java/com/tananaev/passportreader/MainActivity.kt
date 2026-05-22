@@ -41,6 +41,7 @@ import androidx.core.graphics.scale
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.tananaev.passportreader.ImageUtil.decodeImage
 import com.wdullaer.materialdatetimepicker.date.DatePickerDialog
 import net.sf.scuba.smartcards.CardService
@@ -172,6 +173,53 @@ abstract class MainActivity : AppCompatActivity() {
             )
             dialog.showYearPickerFirst(true)
             supportFragmentManager.beginTransaction().add(dialog, null).commit()
+        }
+
+        findViewById<FloatingActionButton>(R.id.fab_scan).setOnClickListener {
+            startActivityForResult(Intent(this, CaptureActivity::class.java), REQUEST_SCAN)
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_SCAN && resultCode == RESULT_OK && data != null) {
+            val documentNumber = data.getStringExtra("documentNumber")
+            val dateOfBirth = data.getStringExtra("dateOfBirth")
+            val dateOfExpiry = data.getStringExtra("dateOfExpiry")
+
+            if (documentNumber != null) {
+                PreferenceManager.getDefaultSharedPreferences(this)
+                    .edit { putString(KEY_PASSPORT_NUMBER, documentNumber) }
+                passportNumberView.setText(documentNumber)
+            }
+            if (dateOfBirth != null) {
+                // Convert YYMMDD to YYYY-MM-DD
+                try {
+                    val parsedDate = SimpleDateFormat("yyMMdd", Locale.US).parse(dateOfBirth)
+                    if (parsedDate != null) {
+                        val formattedDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(parsedDate)
+                        PreferenceManager.getDefaultSharedPreferences(this)
+                            .edit { putString(KEY_BIRTH_DATE, formattedDate) }
+                        birthDateView.setText(formattedDate)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, e)
+                }
+            }
+            if (dateOfExpiry != null) {
+                // Convert YYMMDD to YYYY-MM-DD
+                try {
+                    val parsedDate = SimpleDateFormat("yyMMdd", Locale.US).parse(dateOfExpiry)
+                    if (parsedDate != null) {
+                        val formattedDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(parsedDate)
+                        PreferenceManager.getDefaultSharedPreferences(this)
+                            .edit { putString(KEY_EXPIRATION_DATE, formattedDate) }
+                        expirationDateView.setText(formattedDate)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, e)
+                }
+            }
         }
     }
 
@@ -475,5 +523,6 @@ abstract class MainActivity : AppCompatActivity() {
         private const val KEY_PASSPORT_NUMBER = "passportNumber"
         private const val KEY_EXPIRATION_DATE = "expirationDate"
         private const val KEY_BIRTH_DATE = "birthDate"
+        private const val REQUEST_SCAN = 101
     }
 }

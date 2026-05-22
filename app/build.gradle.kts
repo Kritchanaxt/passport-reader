@@ -76,6 +76,11 @@ dependencies {
     implementation(libs.jnbis)
     implementation(libs.bcpkix.jdk15on) // do not update
     implementation(libs.commons.io)
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
+    implementation(libs.mlkit.text.recognition)
     "googleImplementation"(platform(libs.firebase.bom))
     "googleImplementation"(libs.firebase.analytics)
     "googleImplementation"(libs.firebase.crashlytics)
