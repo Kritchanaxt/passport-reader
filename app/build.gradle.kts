@@ -9,12 +9,12 @@ plugins {
 
 android {
     namespace = "com.tananaev.passportreader"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.tananaev.passportreader"
         minSdk = 23
-        targetSdk = 37
+        targetSdk = 36
         versionCode = 23
         versionName = "3.4"
     }
