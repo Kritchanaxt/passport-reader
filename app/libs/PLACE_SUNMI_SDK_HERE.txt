@@ -1,0 +1,2 @@
+Place your SUNMI PayLib / SunmiPaySDK AAR file (e.g. PayLib-release-1.x.x.aar) in this folder.
+The Gradle build file is configured to automatically include any .aar files in this directory.

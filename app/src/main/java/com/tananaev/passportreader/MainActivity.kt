@@ -178,6 +178,9 @@ abstract class MainActivity : AppCompatActivity() {
         findViewById<FloatingActionButton>(R.id.fab_scan).setOnClickListener {
             startActivityForResult(Intent(this, CaptureActivity::class.java), REQUEST_SCAN)
         }
+
+        // Initialize SUNMI NFC Manager dynamically via reflection helper
+        SunmiNfcSwitcher.initAndSwitch(this)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -516,6 +519,11 @@ abstract class MainActivity : AppCompatActivity() {
         PreferenceManager.getDefaultSharedPreferences(this)
             .edit { putString(preferenceKey, value) }
         editText.setText(value)
+    }
+
+    override fun onDestroy() {
+        SunmiNfcSwitcher.cleanup(this)
+        super.onDestroy()
     }
 
     companion object {
