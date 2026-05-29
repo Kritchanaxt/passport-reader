@@ -281,14 +281,27 @@ fun CameraPreviewScreen(
                     selectedAspectRatio.value
                 }
  
+                val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+                val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
+
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .let { if (ratioVal != null) it.aspectRatio(ratioVal) else it.fillMaxHeight() }
-                        .align(Alignment.Center)
-                        .clip(RectangleShape)
-                        .background(Color.Black)
+                        .fillMaxSize()
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .let {
+                                if (ratioVal != null) {
+                                    it.aspectRatio(ratioVal, matchHeightConstraintsFirst = isLandscape)
+                                } else {
+                                    it.fillMaxSize()
+                                }
+                            }
+                            .clip(RectangleShape)
+                            .background(Color.Black)
+                    ) {
                     CameraPreviewView(
                         selectedAspectRatio = selectedAspectRatio,
                         selectedCameraId = selectedCameraId,
@@ -328,6 +341,7 @@ fun CameraPreviewScreen(
                             )
                         }
                     }
+                }
                 }
  
                 CameraControls(
