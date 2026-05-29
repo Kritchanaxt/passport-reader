@@ -1,36 +1,34 @@
 package com.tananaev.passportreader
-
+ 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
+import androidx.compose.runtime.*
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-
+import com.tananaev.passportreader.core.AIDetectedItem
+import com.tananaev.passportreader.core.AiMode
+import com.tananaev.passportreader.utils.UiAspectRatio
+import com.tananaev.passportreader.view.components.camera.CameraPreviewScreen
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+ 
 class CaptureActivity : AppCompatActivity() {
-
-    private lateinit var cameraExecutor: ExecutorService
-    private var isProcessing = false
-
+ 
+    private var mrzResult: MRZParser.ParsedMRZ? = null
+ 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_capture)
-
+ 
         if (allPermissionsGranted()) {
             startCamera()
         } else {
@@ -38,90 +36,115 @@ class CaptureActivity : AppCompatActivity() {
                 this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS
             )
         }
-
-        cameraExecutor = Executors.newSingleThreadExecutor()
     }
-
+ 
     private fun startCamera() {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-
-        cameraProviderFuture.addListener({
-            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-
-            val viewFinder: PreviewView = findViewById(R.id.viewFinder)
-            val preview = Preview.Builder()
-                .build()
-                .also {
-                    it.setSurfaceProvider(viewFinder.surfaceProvider)
+        setContent {
+            var aiMode by remember { mutableStateOf(AiMode.OCR) }
+            var zoomScale by remember { mutableStateOf(1.0f) }
+            var useCropMode by remember { mutableStateOf(true) }
+            var selectedResolution by remember { mutableStateOf<android.util.Size?>(null) }
+            var availableResolutions by remember { mutableStateOf<List<android.util.Size>>(emptyList()) }
+            var selectedCameraId by remember { mutableStateOf("0") }
+            var selectedAspectRatio by remember { mutableStateOf(UiAspectRatio.RATIO_3_4) }
+            var horizontalFlip by remember { mutableStateOf(false) }
+            var verticalFlip by remember { mutableStateOf(false) }
+            var autoFramingEnabled by remember { mutableStateOf(false) }
+ 
+            CameraPreviewScreen(
+                aiMode = aiMode,
+                onAiModeChange = { aiMode = it },
+                zoomScale = zoomScale,
+                onZoomScaleChange = { zoomScale = it },
+                useCropMode = useCropMode,
+                onUseCropModeChange = { useCropMode = it },
+                selectedResolution = selectedResolution,
+                onResolutionChange = { selectedResolution = it },
+                availableResolutions = availableResolutions,
+                onAvailableResolutionsChange = { availableResolutions = it },
+                selectedCameraId = selectedCameraId,
+                onCameraIdChange = { selectedCameraId = it },
+                selectedAspectRatio = selectedAspectRatio,
+                onAspectRatioChange = { selectedAspectRatio = it },
+                horizontalFlip = horizontalFlip,
+                onHorizontalFlipChange = { horizontalFlip = it },
+                verticalFlip = verticalFlip,
+                onVerticalFlipChange = { verticalFlip = it },
+                autoFramingEnabled = autoFramingEnabled,
+                onAutoFramingEnabledChange = { autoFramingEnabled = it },
+                onStableDetection = { bitmap, isFront ->
+                    processFrame(bitmap)
+                },
+                onImageCaptured = { bitmap, isFront ->
+                    handleImageCaptured(bitmap, isFront)
+                },
+                onBackClick = {
+                    finish()
                 }
-
-            val imageAnalyzer = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-                .also {
-                    it.setAnalyzer(cameraExecutor, { imageProxy ->
-                        processImageProxy(imageProxy)
-                    })
-                }
-
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-            try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview, imageAnalyzer
-                )
-            } catch (exc: Exception) {
-                Log.e(TAG, "Use case binding failed", exc)
-            }
-
-        }, ContextCompat.getMainExecutor(this))
-    }
-
-    @SuppressLint("UnsafeOptInUsageError")
-    private fun processImageProxy(imageProxy: ImageProxy) {
-        if (isProcessing) {
-            imageProxy.close()
-            return
+            )
         }
-        val mediaImage = imageProxy.image
-        if (mediaImage != null) {
-            isProcessing = true
-            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+    }
+ 
+    private suspend fun processFrame(bitmap: Bitmap): Pair<Boolean, List<AIDetectedItem>> {
+        return suspendCancellableCoroutine { continuation ->
+            val image = InputImage.fromBitmap(bitmap, 0)
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             
             recognizer.process(image)
                 .addOnSuccessListener { visionText ->
                     val parsedMRZ = MRZParser.parse(visionText)
                     if (parsedMRZ != null) {
-                        val intent = Intent()
-                        intent.putExtra("documentNumber", parsedMRZ.documentNumber)
-                        intent.putExtra("dateOfBirth", parsedMRZ.dateOfBirth)
-                        intent.putExtra("dateOfExpiry", parsedMRZ.expirationDate)
-                        setResult(RESULT_OK, intent)
-                        finish()
+                        val detectedItems = mutableListOf<AIDetectedItem>()
+                        for (block in visionText.textBlocks) {
+                            detectedItems.add(
+                                AIDetectedItem(
+                                    label = block.text,
+                                    confidence = 0.9f,
+                                    boundingBox = android.graphics.RectF(block.boundingBox ?: android.graphics.Rect(0, 0, 0, 0))
+                                )
+                            )
+                        }
+                        mrzResult = parsedMRZ
+                        continuation.resume(Pair(true, detectedItems))
                     } else {
-                        isProcessing = false
+                        val detectedItems = mutableListOf<AIDetectedItem>()
+                        for (block in visionText.textBlocks) {
+                            detectedItems.add(
+                                AIDetectedItem(
+                                    label = block.text,
+                                    confidence = 0.5f,
+                                    boundingBox = android.graphics.RectF(block.boundingBox ?: android.graphics.Rect(0, 0, 0, 0))
+                                )
+                            )
+                        }
+                        continuation.resume(Pair(false, detectedItems))
                     }
                 }
                 .addOnFailureListener { e ->
                     Log.e(TAG, "OCR failed", e)
-                    isProcessing = false
+                    continuation.resume(Pair(false, emptyList()))
                 }
-                .addOnCompleteListener {
-                    imageProxy.close()
-                }
-        } else {
-            imageProxy.close()
         }
     }
-
+ 
+    private fun handleImageCaptured(bitmap: Bitmap, isFront: Boolean) {
+        val result = mrzResult
+        if (result != null) {
+            val intent = Intent()
+            intent.putExtra("documentNumber", result.documentNumber)
+            intent.putExtra("dateOfBirth", result.dateOfBirth)
+            intent.putExtra("dateOfExpiry", result.expirationDate)
+            setResult(RESULT_OK, intent)
+            finish()
+        }
+    }
+ 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(
             baseContext, it
         ) == PackageManager.PERMISSION_GRANTED
     }
-
+ 
     override fun onRequestPermissionsResult(
         requestCode: Int, permissions: Array<String>, grantResults: IntArray
     ) {
@@ -135,12 +158,7 @@ class CaptureActivity : AppCompatActivity() {
             }
         }
     }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        cameraExecutor.shutdown()
-    }
-
+ 
     companion object {
         private const val TAG = "CaptureActivity"
         private const val REQUEST_CODE_PERMISSIONS = 10
