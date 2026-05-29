@@ -49,7 +49,7 @@ fun CameraFrameProcessor(
     var isPreviewPaused by isPreviewPausedState
  
     with(wrapper) {
-        LaunchedEffect(cameraKey, aiMode, isProcessingBusy, useCropMode, horizontalFlip, verticalFlip, autoFramingEnabled) {
+        LaunchedEffect(cameraKey, aiMode, isProcessingBusy, useCropMode, horizontalFlip, verticalFlip, autoFramingEnabled, cameraController) {
             isCapturing = false
             stableTime = 0L
             

@@ -19,27 +19,38 @@ object MRZParser {
         val expirationDate: String
     )
 
+    // Regex that matches ALL unicode characters that OCR may misread from passport '<' filler:
+    // - Guillemets: « » ‹ ›
+    // - CJK angle brackets: 〈 〉 《 》 〔 〕
+    // - Mathematical angle brackets: ⟨ ⟩ ⟪ ⟫
+    // - Much less/greater than: ≪ ≫
+    // - Triangles & arrows: ▲ △ ▶ ► ▷ ▼ ▽ ◀ ◁ ◄ ◅
+    // - Chevrons: ‹ › ˂ ˃ ˄ ˅
+    // - Fullwidth less/greater: ＜ ＞
+    // - Carets, braces, brackets, parens
+    // - Lowercase c/k (never valid in MRZ)
+    private val FILLER_CHAR_REGEX = Regex(
+        "[«»‹›〈〉《》〔〕⟨⟩⟪⟫≪≫" +
+        "▲△▶►▷▼▽◀◁◄◅" +
+        "˂˃˄˅＜＞" +
+        "\\^{}\\[\\]()ck>]"
+    )
+
     fun normalizeLine(text: String): String {
-        // 1. Remove standard whitespace and spacer layout artifacts
-        var result = text.replace(" ", "")
-            .replace("\r", "")
-            .replace("\n", "")
-            .replace("\t", "")
+        // 1. Remove all standard and unicode whitespace characters
+        var result = text.replace("\\s+".toRegex(), "")
+            .replace("\u00A0", "")  // Non-breaking space
+            .replace("\u2007", "")  // Figure space
+            .replace("\u202F", "")  // Narrow no-break space
+            .replace("\u200B", "")  // Zero-width space
+            .replace("\u2060", "")  // Word joiner
+            .replace("\uFEFF", "")  // BOM / Zero-width no-break space
 
-        // 2. Normalize caret markers, double arrows, and lowercase filler misrecognitions to '<'
-        result = result.replace("^", "<")
-            .replace("«", "<")
-            .replace("»", "<")
-            .replace("c", "<") // Lowercase 'c' is never valid in standard MRZ
-            .replace("k", "<") // Lowercase 'k' at edges is typical OCR noise
-            .replace("{", "<")
-            .replace("}", "<")
-            .replace("[", "<")
-            .replace("]", "<")
-            .replace("(", "<")
-            .replace(")", "<")
+        // 2. Normalize ALL unicode angle/chevron/guillemet/triangle variants to '<'
+        result = FILLER_CHAR_REGEX.replace(result, "<")
 
-        // 3. Normalize uppercase 'C' acting as filler character noise
+        // 3. Collapse consecutive '<' (e.g. "<<<" stays "<<<", already correct)
+        // But normalize uppercase 'C' acting as filler character noise
         result = result.replace(Regex("<C+<"), "<")
         result = result.replace(Regex("<C+"), "<")
         result = result.replace(Regex("C+<"), "<")
@@ -49,21 +60,103 @@ object MRZParser {
         return result.uppercase()
     }
 
+    /**
+     * Data class to hold a text fragment with its bounding box position
+     */
+    private data class TextFragment(
+        val text: String,
+        val centerY: Float,
+        val left: Float
+    )
+
     fun parse(results: Text): ParsedMRZ? {
-        val allLines = mutableListOf<String>()
-        val blocks = results.textBlocks
-        
-        for (i in blocks.indices) {
-            val lines = blocks[i].lines
-            for (j in lines.indices) {
-                val cleaned = normalizeLine(lines[j].text)
-                if (cleaned.isNotEmpty()) {
-                    allLines.add(cleaned)
+        // ============================================================
+        // STEP 1: Collect ALL text elements with bounding box positions
+        // ============================================================
+        val fragments = mutableListOf<TextFragment>()
+        for (block in results.textBlocks) {
+            for (line in block.lines) {
+                for (element in line.elements) {
+                    val box = element.boundingBox
+                    if (box != null) {
+                        val cleaned = normalizeLine(element.text)
+                        if (cleaned.isNotEmpty()) {
+                            fragments.add(TextFragment(
+                                text = cleaned,
+                                centerY = (box.top + box.bottom) / 2f,
+                                left = box.left.toFloat()
+                            ))
+                        }
+                    }
+                }
+                // Also add the whole line as a fragment in case elements are merged
+                val lineBox = line.boundingBox
+                if (lineBox != null) {
+                    val cleaned = normalizeLine(line.text)
+                    if (cleaned.isNotEmpty()) {
+                        fragments.add(TextFragment(
+                            text = cleaned,
+                            centerY = (lineBox.top + lineBox.bottom) / 2f,
+                            left = lineBox.left.toFloat()
+                        ))
+                    }
                 }
             }
         }
 
-        // Search for a line matching MRZ_SECONDLINE
+        // ============================================================
+        // STEP 2: Group fragments by similar Y position (same row)
+        // Tolerance: fragments within 20px vertical distance = same line
+        // ============================================================
+        val yTolerance = 20f
+        val sortedByY = fragments.sortedBy { it.centerY }
+        val rowGroups = mutableListOf<MutableList<TextFragment>>()
+
+        for (frag in sortedByY) {
+            val matchedGroup = rowGroups.find { group ->
+                group.any { kotlin.math.abs(it.centerY - frag.centerY) < yTolerance }
+            }
+            if (matchedGroup != null) {
+                matchedGroup.add(frag)
+            } else {
+                rowGroups.add(mutableListOf(frag))
+            }
+        }
+
+        // ============================================================
+        // STEP 3: For each row, sort fragments left-to-right by X,
+        //         concatenate them, and pad with '<' to 44 characters
+        // ============================================================
+        val mergedLines = mutableListOf<String>()
+        for (group in rowGroups) {
+            val sortedByX = group.sortedBy { it.left }
+            val merged = sortedByX.joinToString("") { it.text }
+            if (merged.isNotEmpty()) {
+                mergedLines.add(merged)
+                // Also add a padded version (fill gaps with '<' to reach 44 chars)
+                if (merged.length in 20..43) {
+                    val padded = merged.padEnd(44, '<')
+                    mergedLines.add(padded)
+                }
+            }
+        }
+
+        // Also add individual lines from the original blocks (original approach)
+        for (block in results.textBlocks) {
+            for (line in block.lines) {
+                val cleaned = normalizeLine(line.text)
+                if (cleaned.isNotEmpty()) {
+                    mergedLines.add(cleaned)
+                }
+            }
+        }
+
+        // Remove duplicates
+        val allLines = mergedLines.distinct()
+
+        // ============================================================
+        // STEP 4: Try matching MRZ_SECONDLINE on each candidate line
+        // ============================================================
         for (line in allLines) {
             val matchResult = MRZ_SECONDLINE.find(line)
             if (matchResult != null) {
@@ -81,7 +174,9 @@ object MRZParser {
             }
         }
 
-        // Fallback: Concatenate with hyphens to support old REGEX layout if structure is slightly warped
+        // ============================================================
+        // STEP 5: Fallback - concatenate all lines with hyphens
+        // ============================================================
         var fullRead = ""
         for (line in allLines) {
             fullRead += "$line-"
@@ -157,5 +252,60 @@ object MRZParser {
             .replace("O", "0")
             .replace("S", "5")
             .replace("G", "6")
+    }
+
+    /**
+     * Groups OCR text elements horizontally based on vertical center coordinate (Y),
+     * sorts them left-to-right (X), and returns the reconstructed lines.
+     */
+    fun getMergedRawLines(results: Text): List<String> {
+        val fragments = mutableListOf<TextFragment>()
+        for (block in results.textBlocks) {
+            for (line in block.lines) {
+                for (element in line.elements) {
+                    val box = element.boundingBox
+                    if (box != null) {
+                        val cleaned = normalizeLine(element.text)
+                        if (cleaned.isNotEmpty()) {
+                            fragments.add(TextFragment(
+                                text = cleaned,
+                                centerY = (box.top + box.bottom) / 2f,
+                                left = box.left.toFloat()
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+
+        val yTolerance = 25f
+        val sortedByY = fragments.sortedBy { it.centerY }
+        val rowGroups = mutableListOf<MutableList<TextFragment>>()
+
+        for (frag in sortedByY) {
+            val matchedGroup = rowGroups.find { group ->
+                group.any { kotlin.math.abs(it.centerY - frag.centerY) < yTolerance }
+            }
+            if (matchedGroup != null) {
+                // Avoid duplicates at the exact same location
+                if (matchedGroup.none { it.left == frag.left && it.text == frag.text }) {
+                    matchedGroup.add(frag)
+                }
+            } else {
+                rowGroups.add(mutableListOf(frag))
+            }
+        }
+
+        val mergedLines = mutableListOf<String>()
+        // Sort groups by Y position from top to bottom
+        val sortedRowGroups = rowGroups.sortedBy { group -> group.map { it.centerY }.average() }
+        for (group in sortedRowGroups) {
+            val sortedByX = group.sortedBy { it.left }
+            val merged = sortedByX.joinToString("") { it.text }
+            if (merged.isNotEmpty()) {
+                mergedLines.add(merged)
+            }
+        }
+        return mergedLines
     }
 }

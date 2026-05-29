@@ -232,7 +232,7 @@ fun CameraPreviewScreen(
             }
         }
  
-        LaunchedEffect(isPreviewPaused, isProcessingBusy) {
+        LaunchedEffect(isPreviewPaused, isProcessingBusy, cameraController) {
             if (isPreviewPaused || isProcessingBusy) {
                 cameraController?.pausePreview()
             } else {
