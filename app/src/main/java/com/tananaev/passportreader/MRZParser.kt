@@ -255,32 +255,49 @@ object MRZParser {
     }
 
     /**
-     * Groups OCR text elements horizontally based on vertical center coordinate (Y),
+     * Groups OCR text LINES (not elements) horizontally based on vertical center coordinate (Y),
      * sorts them left-to-right (X), and returns the reconstructed lines.
+     *
+     * Uses line-level fragments instead of element-level to avoid cross-line merging
+     * that happens when MRZ lines are very close together and individual element
+     * Y-coordinates drift across the tolerance boundary.
      */
     fun getMergedRawLines(results: Text): List<String> {
-        val fragments = mutableListOf<TextFragment>()
+        // Local data class with height for adaptive tolerance calculation
+        data class LineFrag(
+            val text: String,
+            val centerY: Float,
+            val left: Float,
+            val height: Float
+        )
+
+        val fragments = mutableListOf<LineFrag>()
         for (block in results.textBlocks) {
             for (line in block.lines) {
-                for (element in line.elements) {
-                    val box = element.boundingBox
-                    if (box != null) {
-                        val cleaned = normalizeLine(element.text)
-                        if (cleaned.isNotEmpty()) {
-                            fragments.add(TextFragment(
-                                text = cleaned,
-                                centerY = (box.top + box.bottom) / 2f,
-                                left = box.left.toFloat()
-                            ))
-                        }
+                val box = line.boundingBox
+                if (box != null) {
+                    val cleaned = normalizeLine(line.text)
+                    if (cleaned.isNotEmpty()) {
+                        fragments.add(LineFrag(
+                            text = cleaned,
+                            centerY = (box.top + box.bottom) / 2f,
+                            left = box.left.toFloat(),
+                            height = (box.bottom - box.top).toFloat()
+                        ))
                     }
                 }
             }
         }
 
-        val yTolerance = 25f
+        if (fragments.isEmpty()) return emptyList()
+
+        // Adaptive Y-tolerance: 40% of average line height, clamped to [8, 20]
+        // This prevents merging lines that are vertically close (like MRZ rows)
+        val avgHeight = fragments.map { it.height }.average().toFloat()
+        val yTolerance = (avgHeight * 0.4f).coerceIn(8f, 20f)
+
         val sortedByY = fragments.sortedBy { it.centerY }
-        val rowGroups = mutableListOf<MutableList<TextFragment>>()
+        val rowGroups = mutableListOf<MutableList<LineFrag>>()
 
         for (frag in sortedByY) {
             val matchedGroup = rowGroups.find { group ->
