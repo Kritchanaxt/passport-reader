@@ -103,7 +103,7 @@ class CaptureActivity : AppCompatActivity() {
                     autoFramingEnabled = autoFramingEnabled,
                     onAutoFramingEnabledChange = { autoFramingEnabled = it },
                     onStableDetection = { bitmap, isFront ->
-                        processFrame(bitmap)
+                        processFrame(bitmap, aiMode)
                     },
                     onImageCaptured = { bitmap, isFront ->
                         capturedBitmap = bitmap
@@ -316,7 +316,7 @@ class CaptureActivity : AppCompatActivity() {
                                     .height(48.dp)
                             ) {
                                 Text(
-                                    text = "ยืนยันและใช้งาน",
+                                    text = "ยืนยัน",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp
                                 )
@@ -368,7 +368,7 @@ class CaptureActivity : AppCompatActivity() {
         return "$yy-$mm-$dd"
     }
  
-    private suspend fun processFrame(bitmap: Bitmap): Pair<Boolean, List<AIDetectedItem>> {
+    private suspend fun processFrame(bitmap: Bitmap, aiMode: AiMode): Pair<Boolean, List<AIDetectedItem>> {
         return suspendCancellableCoroutine { continuation ->
             val image = InputImage.fromBitmap(bitmap, 0)
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -379,8 +379,13 @@ class CaptureActivity : AppCompatActivity() {
                     val mergedLines = MRZParser.getMergedRawLines(visionText)
                     rawOcrTextStore = mergedLines.joinToString("\n")
 
-                    val parsedMRZ = MRZParser.parse(visionText)
-                    if (parsedMRZ != null) {
+                    val parsedResult = if (aiMode == AiMode.OCR) {
+                        MRZParser.parse(visionText)
+                    } else {
+                        MRZParser.parseGeneralText(mergedLines)
+                    }
+
+                    if (parsedResult != null) {
                         val detectedItems = mutableListOf<AIDetectedItem>()
                         for (block in visionText.textBlocks) {
                             detectedItems.add(
@@ -391,7 +396,7 @@ class CaptureActivity : AppCompatActivity() {
                                 )
                             )
                         }
-                        mrzResult = parsedMRZ
+                        mrzResult = parsedResult
                         continuation.resume(Pair(true, detectedItems))
                     } else {
                         val detectedItems = mutableListOf<AIDetectedItem>()

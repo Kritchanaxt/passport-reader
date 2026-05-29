@@ -154,7 +154,7 @@ fun CameraFrameProcessor(
                                         val cropped = Bitmap.createBitmap(baseBitmap, left, top, width, height)
                                         if (baseBitmap !== rawBitmap) baseBitmap.recycle()
                                         
-                                        if (aiMode == AiMode.OCR) {
+                                        if (aiMode == AiMode.OCR || aiMode == AiMode.TEXT_RECOGNITION) {
                                             val mrzTop = (height * 0.70f).toInt().coerceAtLeast(0)
                                             val mrzHeight = (height * 0.30f).toInt().coerceAtMost(height - mrzTop)
                                             if (mrzHeight > 0) {
@@ -219,7 +219,7 @@ fun CameraFrameProcessor(
                                         val height = frameH.toInt().coerceAtMost(baseBitmap.height - top)
          
                                         val cropped = Bitmap.createBitmap(baseBitmap, left, top, width, height)
-                                        if (aiMode == AiMode.OCR) {
+                                        if (aiMode == AiMode.OCR || aiMode == AiMode.TEXT_RECOGNITION) {
                                             val mrzTop = (height * 0.70f).toInt().coerceAtLeast(0)
                                             val mrzHeight = (height * 0.30f).toInt().coerceAtMost(height - mrzTop)
                                             if (mrzHeight > 0) {

@@ -63,7 +63,7 @@ fun AiModeBottomSheet(
             orderedModes.forEach { mode ->
                 val label = when (mode) {
                     AiMode.OCR -> "MRZ Passport Scanner"
-                    AiMode.TEXT_RECOGNITION -> "General Text Recognition"
+                    AiMode.TEXT_RECOGNITION -> "Text Recognition"
                     else -> mode.name
                 }
  

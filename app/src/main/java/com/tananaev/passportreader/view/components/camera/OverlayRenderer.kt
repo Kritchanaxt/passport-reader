@@ -73,8 +73,8 @@ fun OverlayRenderer(
         drawContext.canvas.nativeCanvas.drawText(bottomText, -bottomTextWidth / 2f, 0f, textPaint)
         drawContext.canvas.nativeCanvas.restore()
  
-        // Draw the MRZ Target Box in Red
-        if (aiMode == AiMode.OCR) {
+        // Draw the Target Box in Red for OCR and Text Recognition modes
+        if (aiMode == AiMode.OCR || aiMode == AiMode.TEXT_RECOGNITION) {
             val mrzPaint = android.graphics.Paint().apply {
                 style = android.graphics.Paint.Style.STROKE
                 strokeWidth = 4f
@@ -85,14 +85,14 @@ fun OverlayRenderer(
             val mrzRect = android.graphics.RectF(left, top + frameH * 0.70f, right, bottom)
             drawContext.canvas.nativeCanvas.drawRoundRect(mrzRect, 16f, 16f, mrzPaint)
             
-            // Draw visual label for MRZ
+            // Draw visual label
             val mrzLabelPaint = android.graphics.Paint().apply {
                 color = android.graphics.Color.parseColor("#FF3B30")
                 textSize = 28f
                 isAntiAlias = true
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
             }
-            val mrzLabel = "กรอบวิเคราะห์แถบ MRZ"
+            val mrzLabel = if (aiMode == AiMode.OCR) "กรอบวิเคราะห์แถบ MRZ" else "กรอบวิเคราะห์ข้อความ"
             val mrzLabelW = mrzLabelPaint.measureText(mrzLabel)
             drawContext.canvas.nativeCanvas.drawText(
                 mrzLabel,
@@ -109,7 +109,7 @@ fun OverlayRenderer(
         val topOffset = if (useCropMode) (size.height - cropH) / 2f else 0f
  
         val boxScaleX = if (bitmapWidth > 0) cropW / bitmapWidth else 1f
-        val boxScaleY = if (aiMode == AiMode.OCR && useCropMode) {
+        val boxScaleY = if ((aiMode == AiMode.OCR || aiMode == AiMode.TEXT_RECOGNITION) && useCropMode) {
             if (bitmapHeight > 0) (0.30f * cropH) / bitmapHeight else 1f
         } else {
             if (bitmapHeight > 0) cropH / bitmapHeight else 1f
@@ -125,7 +125,7 @@ fun OverlayRenderer(
  
         latestDetections.forEach { item ->
             val r = item.boundingBox
-            val mappedRect = if (aiMode == AiMode.OCR && useCropMode) {
+            val mappedRect = if ((aiMode == AiMode.OCR || aiMode == AiMode.TEXT_RECOGNITION) && useCropMode) {
                 android.graphics.RectF(
                     leftOffset + r.left * boxScaleX, (topOffset + cropH * 0.70f) + r.top * boxScaleY,
                     leftOffset + r.right * boxScaleX, (topOffset + cropH * 0.70f) + r.bottom * boxScaleY

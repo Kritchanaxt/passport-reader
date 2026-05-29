@@ -308,4 +308,70 @@ object MRZParser {
         }
         return mergedLines
     }
+
+    private fun normalizeDateToYYMMDD(dateStr: String): String {
+        val cleaned = dateStr.replace("[^0-9]".toRegex(), "")
+        if (cleaned.length == 6) {
+            return cleaned
+        }
+        if (cleaned.length == 8) {
+            if (dateStr.contains("-") && dateStr.indexOf("-") == 4) {
+                return cleaned.substring(2, 8)
+            }
+            val dd = cleaned.substring(0, 2)
+            val mm = cleaned.substring(2, 4)
+            val yy = cleaned.substring(6, 8)
+            return yy + mm + dd
+        }
+        return cleaned
+    }
+
+    /**
+     * Parses document number and birth/expiration dates from general (non-MRZ) text
+     * by applying flexible regex rules.
+     */
+    fun parseGeneralText(lines: List<String>): ParsedMRZ? {
+        if (lines.isEmpty()) return null
+
+        var docNum = ""
+        var dob = ""
+        var exp = ""
+
+        val docRegex = Regex("^[A-Z]{1,2}[0-9]{6,10}$|^[0-9A-Z]{7,12}$")
+        val dateRegex = Regex("\\b\\d{2}[/-]\\d{2}[/-]\\d{4}\\b|\\b\\d{4}[/-]\\d{2}[/-]\\d{2}\\b|\\b\\d{6}\\b")
+
+        val allWords = lines.flatMap { it.split("\\s+".toRegex()) }
+            .map { it.replace("[^A-Z0-9]".toRegex(), "") }
+            .filter { it.isNotEmpty() }
+
+        docNum = allWords.firstOrNull { docRegex.matches(it) } ?: ""
+
+        val dateMatches = lines.flatMap { line ->
+            dateRegex.findAll(line).map { it.value }
+        }.toList()
+
+        if (dateMatches.isNotEmpty()) {
+            dob = normalizeDateToYYMMDD(dateMatches[0])
+            if (dateMatches.size > 1) {
+                exp = normalizeDateToYYMMDD(dateMatches[1])
+            }
+        }
+
+        if (docNum.isEmpty()) {
+            docNum = allWords.firstOrNull { it.length in 7..15 } ?: ""
+        }
+
+        if (docNum.isEmpty() && lines.isNotEmpty()) {
+            docNum = lines[0].replace("[^A-Z0-9]".toRegex(), "").take(15)
+        }
+
+        if (docNum.isNotEmpty()) {
+            return ParsedMRZ(
+                documentNumber = docNum,
+                dateOfBirth = dob,
+                expirationDate = exp
+            )
+        }
+        return null
+    }
 }
