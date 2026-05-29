@@ -73,6 +73,35 @@ fun OverlayRenderer(
         drawContext.canvas.nativeCanvas.drawText(bottomText, -bottomTextWidth / 2f, 0f, textPaint)
         drawContext.canvas.nativeCanvas.restore()
  
+        // Draw the MRZ Target Box in Red
+        if (aiMode == AiMode.OCR) {
+            val mrzPaint = android.graphics.Paint().apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = 4f
+                color = android.graphics.Color.parseColor("#FF3B30") // Premium Apple Red
+                pathEffect = android.graphics.DashPathEffect(floatArrayOf(15f, 15f), 0f)
+                isAntiAlias = true
+            }
+            val mrzRect = android.graphics.RectF(left, top + frameH * 0.70f, right, bottom)
+            drawContext.canvas.nativeCanvas.drawRoundRect(mrzRect, 16f, 16f, mrzPaint)
+            
+            // Draw visual label for MRZ
+            val mrzLabelPaint = android.graphics.Paint().apply {
+                color = android.graphics.Color.parseColor("#FF3B30")
+                textSize = 28f
+                isAntiAlias = true
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+            val mrzLabel = "กรอบวิเคราะห์แถบ MRZ"
+            val mrzLabelW = mrzLabelPaint.measureText(mrzLabel)
+            drawContext.canvas.nativeCanvas.drawText(
+                mrzLabel,
+                left + (frameW - mrzLabelW) / 2f,
+                top + frameH * 0.70f - 20f,
+                mrzLabelPaint
+            )
+        }
+
         val cropW = if (useCropMode) frameW else size.width
         val cropH = if (useCropMode) frameH else size.height
  
@@ -80,7 +109,11 @@ fun OverlayRenderer(
         val topOffset = if (useCropMode) (size.height - cropH) / 2f else 0f
  
         val boxScaleX = if (bitmapWidth > 0) cropW / bitmapWidth else 1f
-        val boxScaleY = if (bitmapHeight > 0) cropH / bitmapHeight else 1f
+        val boxScaleY = if (aiMode == AiMode.OCR && useCropMode) {
+            if (bitmapHeight > 0) (0.30f * cropH) / bitmapHeight else 1f
+        } else {
+            if (bitmapHeight > 0) cropH / bitmapHeight else 1f
+        }
  
         val ocrPaint = android.graphics.Paint().apply {
             color = android.graphics.Color.CYAN
@@ -92,10 +125,17 @@ fun OverlayRenderer(
  
         latestDetections.forEach { item ->
             val r = item.boundingBox
-            val mappedRect = android.graphics.RectF(
-                leftOffset + r.left * boxScaleX, topOffset + r.top * boxScaleY,
-                leftOffset + r.right * boxScaleX, topOffset + r.bottom * boxScaleY
-            )
+            val mappedRect = if (aiMode == AiMode.OCR && useCropMode) {
+                android.graphics.RectF(
+                    leftOffset + r.left * boxScaleX, (topOffset + cropH * 0.70f) + r.top * boxScaleY,
+                    leftOffset + r.right * boxScaleX, (topOffset + cropH * 0.70f) + r.bottom * boxScaleY
+                )
+            } else {
+                android.graphics.RectF(
+                    leftOffset + r.left * boxScaleX, topOffset + r.top * boxScaleY,
+                    leftOffset + r.right * boxScaleX, topOffset + r.bottom * boxScaleY
+                )
+            }
             drawContext.canvas.nativeCanvas.drawRect(mappedRect, ocrPaint)
             
             val text = item.label.trim()

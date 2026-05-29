@@ -153,7 +153,20 @@ fun CameraFrameProcessor(
                                     if (width > 0 && height > 0) {
                                         val cropped = Bitmap.createBitmap(baseBitmap, left, top, width, height)
                                         if (baseBitmap !== rawBitmap) baseBitmap.recycle()
-                                        cropped
+                                        
+                                        if (aiMode == AiMode.OCR) {
+                                            val mrzTop = (height * 0.70f).toInt().coerceAtLeast(0)
+                                            val mrzHeight = (height * 0.30f).toInt().coerceAtMost(height - mrzTop)
+                                            if (mrzHeight > 0) {
+                                                val mrzCropped = Bitmap.createBitmap(cropped, 0, mrzTop, width, mrzHeight)
+                                                cropped.recycle()
+                                                mrzCropped
+                                            } else {
+                                                cropped
+                                            }
+                                        } else {
+                                            cropped
+                                        }
                                     } else {
                                         baseBitmap
                                     }
@@ -205,7 +218,20 @@ fun CameraFrameProcessor(
                                         val width = frameW.toInt().coerceAtMost(baseBitmap.width - left)
                                         val height = frameH.toInt().coerceAtMost(baseBitmap.height - top)
          
-                                        Bitmap.createBitmap(baseBitmap, left, top, width, height)
+                                        val cropped = Bitmap.createBitmap(baseBitmap, left, top, width, height)
+                                        if (aiMode == AiMode.OCR) {
+                                            val mrzTop = (height * 0.70f).toInt().coerceAtLeast(0)
+                                            val mrzHeight = (height * 0.30f).toInt().coerceAtMost(height - mrzTop)
+                                            if (mrzHeight > 0) {
+                                                val mrzCropped = Bitmap.createBitmap(cropped, 0, mrzTop, width, mrzHeight)
+                                                cropped.recycle()
+                                                mrzCropped
+                                            } else {
+                                                cropped
+                                            }
+                                        } else {
+                                            cropped
+                                        }
                                     } catch (e: Throwable) { null }
          
                                     if (expandedBitmap != null) {
