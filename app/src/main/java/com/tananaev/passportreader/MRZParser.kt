@@ -50,12 +50,6 @@ object MRZParser {
         result = FILLER_CHAR_REGEX.replace(result, "<")
 
         // 3. Collapse consecutive '<' (e.g. "<<<" stays "<<<", already correct)
-        // But normalize uppercase 'C' acting as filler character noise
-        result = result.replace(Regex("<C+<"), "<")
-        result = result.replace(Regex("<C+"), "<")
-        result = result.replace(Regex("C+<"), "<")
-        result = result.replace(Regex("C+$"), "<")
-        result = result.replace(Regex("^C+"), "<")
 
         return result.uppercase()
     }
