@@ -34,6 +34,7 @@ import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.edit
@@ -228,14 +229,45 @@ abstract class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        
+        // 1. Diagnostics check for Sunmi device NFC module routing
+        val isSunmi = android.os.Build.MANUFACTURER.equals("SUNMI", ignoreCase = true)
+        if (isSunmi && SunmiNfcSwitcher.initError != null) {
+            Snackbar.make(
+                findViewById(android.R.id.content),
+                "Sunmi NFC Error: ${SunmiNfcSwitcher.initError}",
+                Snackbar.LENGTH_INDEFINITE
+            ).setAction("Dismiss") {}.show()
+        }
+
+        // 2. Validate standard Android NFC adapter
         val adapter = NfcAdapter.getDefaultAdapter(this)
-        if (adapter != null) {
+        if (adapter == null) {
+            Snackbar.make(
+                findViewById(android.R.id.content),
+                "NFC is not supported on this device.",
+                Snackbar.LENGTH_LONG
+            ).show()
+        } else if (!adapter.isEnabled) {
+            Snackbar.make(
+                findViewById(android.R.id.content),
+                "NFC is disabled. Please enable it in Settings.",
+                Snackbar.LENGTH_INDEFINITE
+            ).setAction("Settings") {
+                try {
+                    startActivity(Intent(android.provider.Settings.ACTION_NFC_SETTINGS))
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Failed to open NFC settings", Toast.LENGTH_SHORT).show()
+                }
+            }.show()
+        } else {
             val intent = Intent(applicationContext, this.javaClass)
             intent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
             val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_MUTABLE)
             val filter = arrayOf(arrayOf("android.nfc.tech.IsoDep"))
             adapter.enableForegroundDispatch(this, pendingIntent, null, filter)
         }
+
         if (passportNumberFromIntent) {
             // When the passport number field is populated from the caller, we hide the
             // soft keyboard as otherwise it can obscure the 'Reading data' progress indicator.

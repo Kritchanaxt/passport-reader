@@ -9,7 +9,15 @@ object SunmiNfcSwitcher {
     private var activeNfcSn: String? = null
     private var registeredListener: Any? = null
 
+    // Diagnostics / Status Tracking
+    var isInitialized = false
+    var initStatus = "Idle"
+    var initError: String? = null
+
     fun initAndSwitch(context: Context) {
+        initStatus = "Initializing"
+        isInitialized = false
+        initError = null
         try {
             // 1. Resolve classes dynamically
             val nfcManagerClass = Class.forName("com.sunmi.peripheral.aidl.NfcManager")
@@ -36,12 +44,27 @@ object SunmiNfcSwitcher {
                 initMethod.invoke(null, context, callbackProxy)
                 Log.i(TAG, "SUNMI NfcManager.init called successfully via reflection")
             } else {
-                Log.e(TAG, "NfcManager.init method not found via reflection")
+                val err = "NfcManager.init method not found via reflection"
+                Log.e(TAG, err)
+                initStatus = "Init Method Not Found"
+                initError = err
             }
         } catch (e: ClassNotFoundException) {
-            Log.i(TAG, "SUNMI Peripheral NFC SDK not available on this device (normal behavior for non-Sunmi devices)")
+            val isSunmi = android.os.Build.MANUFACTURER.equals("SUNMI", ignoreCase = true)
+            if (isSunmi) {
+                val err = "Sunmi Peripheral AIDL SDK classes not found. Make sure the SDK service is installed on this device."
+                Log.e(TAG, err, e)
+                initStatus = "SDK Not Found on Sunmi"
+                initError = err
+            } else {
+                Log.i(TAG, "SUNMI Peripheral NFC SDK not available on this device (normal behavior for non-Sunmi devices)")
+                initStatus = "Non-Sunmi Device"
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error initializing SUNMI NFC via reflection", e)
+            val err = "Error initializing SUNMI NFC via reflection: ${e.message}"
+            Log.e(TAG, err, e)
+            initStatus = "Initialization Failed"
+            initError = err
         }
     }
 
@@ -93,7 +116,10 @@ object SunmiNfcSwitcher {
                                 switchMethod.invoke(null, sn)
                                 activeNfcSn = sn
                             }
+                            initStatus = "Success (SN: $sn)"
                         }
+                    } else {
+                        initStatus = "Success (No NFC Modules)"
                     }
                 }
                 null
@@ -101,9 +127,14 @@ object SunmiNfcSwitcher {
 
             registerMethod.invoke(null, listenerProxy)
             registeredListener = listenerProxy
+            isInitialized = true
+            initStatus = "Listener Registered"
             Log.i(TAG, "SUNMI NFC Listener registered successfully")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to register SUNMI NFC listener via reflection", e)
+            val err = "Failed to register SUNMI NFC listener via reflection: ${e.message}"
+            Log.e(TAG, err, e)
+            initStatus = "Registration Failed"
+            initError = err
         }
     }
 

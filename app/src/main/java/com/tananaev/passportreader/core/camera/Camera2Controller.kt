@@ -558,7 +558,7 @@ class Camera2Controller(
         val centerY = viewRect.centerY()
         
         Log.d(TAG, "configureTransform: viewSize=${viewWidth}x${viewHeight}, previewSize=${previewSize.width}x${previewSize.height}, rotation=$rotation")
- 
+
         if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
             bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
             matrix.setRectToRect(viewRect, bufferRect, android.graphics.Matrix.ScaleToFit.FILL)
@@ -593,7 +593,7 @@ class Camera2Controller(
                 softwareAutoFramingController.currentPanY
             )
         }
- 
+
         textureView.setTransform(matrix)
     }
  

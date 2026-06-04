@@ -111,6 +111,8 @@ fun CameraPreviewScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val orientation = configuration.orientation
     var cameraController by remember { mutableStateOf<Camera2Controller?>(null) }
  
     val availableCameras = remember {
@@ -158,7 +160,7 @@ fun CameraPreviewScreen(
         val currentOnStableDetection = rememberUpdatedState(onStableDetection)
         val currentOnImageCaptured = rememberUpdatedState(onImageCaptured)
  
-        LaunchedEffect(selectedCameraId, selectedAspectRatio, aiMode) {
+        LaunchedEffect(selectedCameraId, selectedAspectRatio, aiMode, orientation) {
             if (cameraController == null) {
                 cameraController = Camera2Controller(context) { bitmap, isFront ->
                     currentOnImageCaptured.value(
@@ -302,12 +304,14 @@ fun CameraPreviewScreen(
                             .clip(RectangleShape)
                             .background(Color.Black)
                     ) {
-                    CameraPreviewView(
-                        selectedAspectRatio = selectedAspectRatio,
-                        selectedCameraId = selectedCameraId,
-                        selectedResolution = selectedResolution,
-                        cameraController = cameraController
-                    )
+                    key(orientation) {
+                        CameraPreviewView(
+                            selectedAspectRatio = selectedAspectRatio,
+                            selectedCameraId = selectedCameraId,
+                            selectedResolution = selectedResolution,
+                            cameraController = cameraController
+                        )
+                    }
  
                     OverlayRenderer(
                         aiMode = aiMode,
