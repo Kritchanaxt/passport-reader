@@ -78,9 +78,7 @@ class Camera2Controller(
         }
  
     fun isCroppingNeeded(): Boolean {
-        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
-        val rotation = windowManager?.defaultDisplay?.rotation ?: 0
-        val isLandscape = (rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270)
+        val isLandscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         return !isLandscape && (aspectRatio == UiAspectRatio.RATIO_16_9 || aspectRatio == UiAspectRatio.RATIO_4_3)
     }
  

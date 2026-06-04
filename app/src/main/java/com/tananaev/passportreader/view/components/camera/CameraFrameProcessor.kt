@@ -77,9 +77,7 @@ fun CameraFrameProcessor(
                                 val tv = cameraController.textureView ?: return@withContext null
                                 val pSize = cameraController.previewSize
                                 if (pSize != null) {
-                                    val windowManager = context.getSystemService(android.content.Context.WINDOW_SERVICE) as? android.view.WindowManager
-                                    val rotation = windowManager?.defaultDisplay?.rotation ?: 0
-                                    val isLandscape = (rotation == android.view.Surface.ROTATION_90 || rotation == android.view.Surface.ROTATION_270)
+                                    val isLandscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
                                     
                                     val pWidth = if (isLandscape) maxOf(pSize.width, pSize.height) else minOf(pSize.width, pSize.height)
                                     val pHeight = if (isLandscape) minOf(pSize.width, pSize.height) else maxOf(pSize.width, pSize.height)
@@ -93,7 +91,32 @@ fun CameraFrameProcessor(
                                 }
                             }
                             if (rawBitmap != null) {
-                                var activeBitmap = rawBitmap
+                                val windowManager = context.getSystemService(android.content.Context.WINDOW_SERVICE) as? android.view.WindowManager
+                                val rotation = windowManager?.defaultDisplay?.rotation ?: 0
+                                val displayRotation = when (rotation) {
+                                    android.view.Surface.ROTATION_90 -> 90
+                                    android.view.Surface.ROTATION_180 -> 180
+                                    android.view.Surface.ROTATION_270 -> 270
+                                    else -> 0
+                                }
+                                
+                                var activeBitmap = if (displayRotation != 0) {
+                                    try {
+                                        val matrix = android.graphics.Matrix()
+                                        val bitmapRotation = (360 - displayRotation) % 360
+                                        matrix.postRotate(bitmapRotation.toFloat())
+                                        val rotated = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+                                        if (rotated != rawBitmap) {
+                                            rawBitmap.recycle()
+                                        }
+                                        rotated
+                                    } catch (e: Exception) {
+                                        Log.e("CameraFrameProcessor", "Error rotating bitmap", e)
+                                        rawBitmap
+                                    }
+                                } else {
+                                    rawBitmap
+                                }
                                 val targetAR = cameraController.aspectRatio.value
                                 if (targetAR != null) {
                                     val w = activeBitmap.width
