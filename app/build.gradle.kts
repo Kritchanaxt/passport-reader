@@ -14,10 +14,13 @@ android {
  
     defaultConfig {
         applicationId = "com.tananaev.passportreader"
-        minSdk = 23
+        minSdk = 28
         targetSdk = 36
         versionCode = 23
         versionName = "3.4"
+        ndk {
+            abiFilters.addAll(setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
+        }
     }
  
     signingConfigs {

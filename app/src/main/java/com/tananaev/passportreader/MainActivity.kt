@@ -230,24 +230,57 @@ abstract class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         
-        // 1. Diagnostics check for Sunmi device NFC module routing
+        // 1. Validate NFC options specifically for SUNMI vs Standard Android devices
         val isSunmi = android.os.Build.MANUFACTURER.equals("SUNMI", ignoreCase = true)
-        if (isSunmi && SunmiNfcSwitcher.initError != null) {
-            Snackbar.make(
-                findViewById(android.R.id.content),
-                "Sunmi NFC Error: ${SunmiNfcSwitcher.initError}",
-                Snackbar.LENGTH_INDEFINITE
-            ).setAction("Dismiss") {}.show()
+        val adapter = NfcAdapter.getDefaultAdapter(this)
+
+        if (isSunmi) {
+            if (adapter == null) {
+                // This is a SUNMI payment terminal (e.g. P1, P2) where standard Android NfcAdapter is disabled.
+                // It requires Sunmi Pay SDK (PayLib) for card reading.
+                val hasPayLib = try {
+                    Class.forName("sunmi.paylib.SunmiPayKernel")
+                    true
+                } catch (e: ClassNotFoundException) {
+                    false
+                }
+                val msg = if (hasPayLib) {
+                    "SUNMI Payment device detected. NFC reading is routed via SUNMI Pay SDK."
+                } else {
+                    "SUNMI Payment device detected but 'PayLib' is not integrated. Passport NFC reading requires SUNMI Pay SDK."
+                }
+                Snackbar.make(
+                    findViewById(android.R.id.content),
+                    msg,
+                    Snackbar.LENGTH_INDEFINITE
+                ).setAction("Dismiss") {}.show()
+            } else {
+                // If it supports standard Android NFC, only show switcher error if the SDK was compiled and failed.
+                val hasPeriphSdk = try {
+                    Class.forName("com.sunmi.peripheral.aidl.NfcManager")
+                    true
+                } catch (e: ClassNotFoundException) {
+                    false
+                }
+                if (hasPeriphSdk && SunmiNfcSwitcher.initError != null) {
+                    Snackbar.make(
+                        findViewById(android.R.id.content),
+                        "SUNMI NFC Switcher Error: ${SunmiNfcSwitcher.initError}",
+                        Snackbar.LENGTH_LONG
+                    ).show()
+                }
+            }
         }
 
-        // 2. Validate standard Android NFC adapter
-        val adapter = NfcAdapter.getDefaultAdapter(this)
+        // 2. Validate standard Android NFC adapter for non-SUNMI payment devices
         if (adapter == null) {
-            Snackbar.make(
-                findViewById(android.R.id.content),
-                "NFC is not supported on this device.",
-                Snackbar.LENGTH_LONG
-            ).show()
+            if (!isSunmi) {
+                Snackbar.make(
+                    findViewById(android.R.id.content),
+                    "NFC is not supported on this device.",
+                    Snackbar.LENGTH_LONG
+                ).show()
+            }
         } else if (!adapter.isEnabled) {
             Snackbar.make(
                 findViewById(android.R.id.content),
