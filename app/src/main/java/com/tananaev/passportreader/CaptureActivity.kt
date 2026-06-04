@@ -77,7 +77,7 @@ class CaptureActivity : AppCompatActivity() {
             var selectedResolution by remember { mutableStateOf<android.util.Size?>(null) }
             var availableResolutions by remember { mutableStateOf<List<android.util.Size>>(emptyList()) }
             var selectedCameraId by remember { mutableStateOf("0") }
-            var selectedAspectRatio by remember { mutableStateOf(UiAspectRatio.RATIO_3_4) }
+            var selectedAspectRatio by remember { mutableStateOf(UiAspectRatio.RATIO_1_1) }
             var horizontalFlip by remember { mutableStateOf(false) }
             var verticalFlip by remember { mutableStateOf(false) }
             var autoFramingEnabled by remember { mutableStateOf(false) }
