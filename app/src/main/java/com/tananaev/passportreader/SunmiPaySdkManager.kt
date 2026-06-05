@@ -3,7 +3,7 @@ package com.tananaev.passportreader
 import android.content.Context
 import android.os.Bundle
 import android.os.RemoteException
-import android.util.Log
+import com.tananaev.passportreader.AppLog as Log
 import com.sunmi.pay.hardware.aidl.AidlConstants
 import com.sunmi.pay.hardware.aidlv2.readcard.CheckCardCallbackV2
 import com.sunmi.pay.hardware.aidlv2.readcard.ReadCardOptV2

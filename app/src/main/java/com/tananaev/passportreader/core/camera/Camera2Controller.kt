@@ -15,7 +15,7 @@ import android.media.Image
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
-import android.util.Log
+import com.tananaev.passportreader.AppLog as Log
 import android.util.Size
 import android.view.Surface
 import android.view.TextureView
@@ -427,7 +427,7 @@ class Camera2Controller(
             val previewSizes = map.getOutputSizes(SurfaceTexture::class.java)
             previewSize = getOptimalPreviewSize(previewSizes, finalCaptureSize)
  
-            Log.d(TAG, "Selected preview size: $previewSize")
+            Log.d(TAG, "Selected preview size: $previewSize (Target requested: ${targetResolution?.width}x${targetResolution?.height})")
  
             textureView?.surfaceTexture?.setDefaultBufferSize(previewSize!!.width, previewSize!!.height)
  
@@ -531,20 +531,27 @@ class Camera2Controller(
     private fun getOptimalPreviewSize(sizes: Array<Size>, targetSize: Size): Size {
         val targetW = targetSize.width
         val targetH = targetSize.height
+
+        // If the exact selected resolution is supported by the preview surface, use it directly
+        if (sizes.contains(targetSize)) {
+            return targetSize
+        }
+
         val targetRatio = max(targetW, targetH).toDouble() / min(targetW, targetH).toDouble()
- 
         val tolerance = 0.05
         val matchedAspect = sizes.filter {
             val ratio = max(it.width, it.height).toDouble() / min(it.width, it.height).toDouble()
             Math.abs(ratio - targetRatio) < tolerance
         }
- 
+
         if (matchedAspect.isNotEmpty()) {
-            return matchedAspect.filter { it.width <= 1920 && it.height <= 1080 }
-                .maxByOrNull { it.width * it.height }
-                ?: matchedAspect.maxByOrNull { it.width * it.height }!!
+            val exactMatch = matchedAspect.firstOrNull { it.width == targetW && it.height == targetH }
+            if (exactMatch != null) return exactMatch
+
+            // Return the largest size matching aspect ratio (no artificial 1080p cap)
+            return matchedAspect.maxByOrNull { it.width * it.height }!!
         }
- 
+
         return sizes.minByOrNull {
             val ratio = max(it.width, it.height).toDouble() / min(it.width, it.height).toDouble()
             Math.abs(ratio - targetRatio)

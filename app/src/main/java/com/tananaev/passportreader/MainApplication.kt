@@ -23,5 +23,6 @@ class MainApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         Security.insertProviderAt(BouncyCastleProvider(), 1)
+        AppLog.init(this)
     }
 }

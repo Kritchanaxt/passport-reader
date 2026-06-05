@@ -30,7 +30,7 @@ import android.preference.PreferenceManager
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Base64
-import android.util.Log
+import com.tananaev.passportreader.AppLog as Log
 import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
@@ -192,6 +192,7 @@ abstract class MainActivity : AppCompatActivity() {
                 showStatusMessage("Sunmi PaySDK connected successfully ✓")
             }
         }
+        LogOverlayHelper.attach(this)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
