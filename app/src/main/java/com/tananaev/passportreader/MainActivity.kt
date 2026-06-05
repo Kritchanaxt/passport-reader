@@ -460,6 +460,7 @@ abstract class MainActivity : AppCompatActivity() {
                     imageBase64 = Base64.encodeToString(buffer, Base64.DEFAULT)
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "ReadTask failed during reading", e)
                 return e
             }
             return null

@@ -34,7 +34,7 @@ class SunmiCardService(
 
     companion object {
         private const val TAG = "SunmiCardService"
-        private const val RECV_BUFFER_SIZE = 1024  // generous buffer for large passport DGs
+        private const val RECV_BUFFER_SIZE = 4096  // generous buffer for large passport DGs
     }
 
     @Volatile
@@ -96,45 +96,42 @@ class SunmiCardService(
      * Transmit a [CommandAPDU] to the contactless card and return the
      * [ResponseAPDU].
      *
-     * Internally delegates to [ReadCardOptV2.smartCardExchange] using the
+     * Internally delegates to [ReadCardOptV2.transmitApdu] using the
      * NFC card-type flag.
      */
     override fun transmit(commandAPDU: CommandAPDU): ResponseAPDU {
         val sendBytes = commandAPDU.bytes
         val recvBytes = ByteArray(RECV_BUFFER_SIZE)
 
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "→ APDU send (${sendBytes.size}B): ${bytesToHex(sendBytes.take(16).toByteArray())}...")
-        }
+        Log.d(TAG, "→ APDU send (${sendBytes.size}B): ${bytesToHex(sendBytes)}")
 
         val result: Int
         try {
-            result = readCardOpt.smartCardExchange(
+            result = readCardOpt.transmitApdu(
                 AidlConstants.CardType.NFC.value,
                 sendBytes,
                 recvBytes,
             )
         } catch (e: Exception) {
-            throw CardServiceException("smartCardExchange failed: ${e.message}", e)
+            Log.e(TAG, "transmitApdu threw exception: ${e.message}", e)
+            throw CardServiceException("transmitApdu failed: ${e.message}", e)
         }
+
+        Log.d(TAG, "transmitApdu result (length): $result")
 
         if (result < 0) {
-            throw CardServiceException("smartCardExchange returned error code: $result")
+            throw CardServiceException("transmitApdu returned error code: $result")
         }
 
-        // Parse the recv buffer: outLen (2B BE) | outData | SWA | SWB
-        val outLen = ((recvBytes[0].toInt() and 0xFF) shl 8) or (recvBytes[1].toInt() and 0xFF)
-        val totalResponseLen = outLen + 2  // outData + SW1 + SW2
-
-        // Build the full response: data + SW1 + SW2
-        val responseBytes = ByteArray(totalResponseLen)
-        System.arraycopy(recvBytes, 2, responseBytes, 0, totalResponseLen)
-
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            val sw1 = recvBytes[2 + outLen].toInt() and 0xFF
-            val sw2 = recvBytes[2 + outLen + 1].toInt() and 0xFF
-            Log.d(TAG, "← APDU recv (${outLen}B data) SW=${String.format("%02X%02X", sw1, sw2)}")
+        if (result < 2) {
+            throw CardServiceException("transmitApdu returned invalid length: $result")
         }
+
+        val responseBytes = Arrays.copyOf(recvBytes, result)
+
+        val sw1 = responseBytes[result - 2].toInt() and 0xFF
+        val sw2 = responseBytes[result - 1].toInt() and 0xFF
+        Log.d(TAG, "← APDU recv (${result - 2}B data) SW=${String.format("%02X%02X", sw1, sw2)}")
 
         return ResponseAPDU(responseBytes)
     }

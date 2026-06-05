@@ -226,9 +226,17 @@ class Camera2Controller(
     @SuppressLint("MissingPermission")
     fun openCamera(textureView: TextureView, cameraIdToOpen: String, desiredResolution: Size? = null) {
         cameraExecutor.execute {
+            var targetCameraId = cameraIdToOpen
+            val available = getAvailableCameras()
+            if (available.isNotEmpty() && !available.contains(targetCameraId)) {
+                val fallbackId = available.first()
+                Log.w(TAG, "Camera ID $targetCameraId not found. Falling back to first available: $fallbackId")
+                targetCameraId = fallbackId
+            }
+
             val activeRes = getActiveResolution(desiredResolution)
             val activeRatio = getActiveAspectRatio()
-            if (cameraDevice != null && cameraId == cameraIdToOpen && 
+            if (cameraDevice != null && cameraId == targetCameraId && 
                 getActiveResolution(targetResolution) == activeRes && 
                 getActiveAspectRatio() == activeRatio && 
                 this.textureView == textureView) {
@@ -241,7 +249,7 @@ class Camera2Controller(
             closeInternal()
  
             this.textureView = textureView
-            this.cameraId = cameraIdToOpen
+            this.cameraId = targetCameraId
             this.targetResolution = desiredResolution
  
             startBackgroundThread()
@@ -477,7 +485,7 @@ class Camera2Controller(
             maxFinalH = (maxFinalW / targetAR).roundToInt()
         }
  
-        if (maxFinalW >= 720 && maxFinalH >= 720) {
+        if (maxFinalW >= 480 && maxFinalH >= 480) {
             val maxForArText = "Max for AR (${maxFinalW}x${maxFinalH})"
             resolutionItems.add(ResolutionItem(null, maxForArText))
         }
@@ -492,7 +500,7 @@ class Camera2Controller(
                     val height = parts[1].toInt()
                     val candidateSize = Size(width, height)
  
-                    if (candidateSize.width < 720 || candidateSize.height < 720) return@forEach
+                    if (candidateSize.width < 480 || candidateSize.height < 480) return@forEach
  
                     val isSupported = if (aspectRatio == UiAspectRatio.RATIO_1_1 && candidateSize.width == 1920 && candidateSize.height == 1920) {
                         true
@@ -569,12 +577,19 @@ class Camera2Controller(
         } else if (Surface.ROTATION_180 == rotation) {
             matrix.postRotate(180f, centerX, centerY)
         } else {
-            val scaleX = viewWidth.toFloat() / previewSize.height
-            val scaleY = viewHeight.toFloat() / previewSize.width
+            // ROTATION_0 (Natural orientation of the device)
+            val isViewLandscape = viewWidth > viewHeight
+            val isPreviewLandscape = previewSize.width > previewSize.height
+            
+            val pWidth = if (isPreviewLandscape == isViewLandscape) previewSize.width else previewSize.height
+            val pHeight = if (isPreviewLandscape == isViewLandscape) previewSize.height else previewSize.width
+            
+            val scaleX = viewWidth.toFloat() / pWidth
+            val scaleY = viewHeight.toFloat() / pHeight
             val targetScale = max(scaleX, scaleY)
             
-            val scaleXRelative = (targetScale * previewSize.height) / viewWidth
-            val scaleYRelative = (targetScale * previewSize.width) / viewHeight
+            val scaleXRelative = (targetScale * pWidth) / viewWidth
+            val scaleYRelative = (targetScale * pHeight) / viewHeight
             
             matrix.setScale(scaleXRelative, scaleYRelative, centerX, centerY)
         }
@@ -930,7 +945,7 @@ class Camera2Controller(
  
             (jpegSizes + previewSizes)
                 .distinctBy { "${it.width}x${it.height}" }
-                .filter { Math.min(it.width, it.height) >= 720 }
+                .filter { Math.min(it.width, it.height) >= 480 }
         } catch(e:Exception) { emptyList() }
     }
  
