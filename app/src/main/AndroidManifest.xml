@@ -4,8 +4,13 @@
     <uses-permission android:name="android.permission.NFC" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="com.sunmi.perm.CONTACTLESS_CARD" />
-    <uses-feature android:name="android.hardware.nfc" android:required="true" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
+
+    <!-- Required on Android 11+ to query the Sunmi Pay SDK service -->
+    <queries>
+        <package android:name="com.sunmi.pay.hardware_v3" />
+    </queries>
 
     <application
         android:allowBackup="true"
