@@ -105,23 +105,59 @@ class SunmiCardService(
 
         Log.d(TAG, "→ APDU send (${sendBytes.size}B): ${bytesToHex(sendBytes)}")
 
-        val result: Int
+        var result = -1
+        var usedTransmitApdu = true
+
         try {
+            // Try standard transmitApdu first (highly recommended, supports all APDU types)
             result = readCardOpt.transmitApdu(
                 AidlConstants.CardType.NFC.value,
                 sendBytes,
                 recvBytes,
             )
         } catch (e: Exception) {
-            Log.e(TAG, "transmitApdu threw exception: ${e.message}", e)
-            throw CardServiceException("transmitApdu failed: ${e.message}", e)
+            Log.w(TAG, "transmitApdu call failed/unsupported: ${e.message}. Trying smartCardExchange fallback...")
+            usedTransmitApdu = false
+        }
+
+        // If transmitApdu threw an exception or returned an error code, fall back to smartCardExchange
+        if (!usedTransmitApdu || result < 0) {
+            val fallbackErr = if (!usedTransmitApdu) "unsupported" else "error $result"
+            Log.i(TAG, "Running smartCardExchange fallback (since transmitApdu was $fallbackErr)")
+            try {
+                val exchangeResult = readCardOpt.smartCardExchange(
+                    AidlConstants.CardType.NFC.value,
+                    sendBytes,
+                    recvBytes,
+                )
+                Log.d(TAG, "smartCardExchange result: $exchangeResult")
+                if (exchangeResult >= 0) {
+                    // parse using smartCardExchange protocol: outLen (2B BE) | outData | SWA | SWB
+                    val outLen = ((recvBytes[0].toInt() and 0xFF) shl 8) or (recvBytes[1].toInt() and 0xFF)
+                    val totalResponseLen = outLen + 2  // outData + SW1 + SW2
+                    
+                    if (outLen < 0 || totalResponseLen > recvBytes.size) {
+                        throw CardServiceException("smartCardExchange parsed invalid length: $outLen")
+                    }
+                    
+                    val responseBytes = ByteArray(totalResponseLen)
+                    System.arraycopy(recvBytes, 2, responseBytes, 0, totalResponseLen)
+                    
+                    val sw1 = recvBytes[2 + outLen].toInt() and 0xFF
+                    val sw2 = recvBytes[2 + outLen + 1].toInt() and 0xFF
+                    Log.d(TAG, "← APDU recv via fallback (${outLen}B data) SW=${String.format("%02X%02X", sw1, sw2)}")
+                    return ResponseAPDU(responseBytes)
+                } else {
+                    Log.e(TAG, "smartCardExchange fallback failed: $exchangeResult")
+                    throw CardServiceException("APDU exchange failed on both transmitApdu ($result) and smartCardExchange ($exchangeResult)")
+                }
+            } catch (ex: Exception) {
+                Log.e(TAG, "smartCardExchange fallback threw exception", ex)
+                throw CardServiceException("APDU exchange failed on all transport methods", ex)
+            }
         }
 
         Log.d(TAG, "transmitApdu result (length): $result")
-
-        if (result < 0) {
-            throw CardServiceException("transmitApdu returned error code: $result")
-        }
 
         if (result < 2) {
             throw CardServiceException("transmitApdu returned invalid length: $result")
