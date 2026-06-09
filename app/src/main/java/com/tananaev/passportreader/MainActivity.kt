@@ -181,7 +181,7 @@ abstract class MainActivity : AppCompatActivity() {
             startActivityForResult(Intent(this, CaptureActivity::class.java), REQUEST_SCAN)
         }
 
-        // Initialize SUNMI Pay SDK for payment terminals where standard NFC is disabled
+        // Initialize SUNMI Pay SDK for SUNMI devices
         val isSunmi = android.os.Build.MANUFACTURER.equals("SUNMI", ignoreCase = true)
         if (isSunmi) {
             SunmiPaySdkManager.onDisconnectedCallback = {
@@ -190,6 +190,10 @@ abstract class MainActivity : AppCompatActivity() {
             SunmiPaySdkManager.init(this) { readCardOpt ->
                 Log.i(TAG, "Sunmi PaySDK connected — ReadCardOptV2 ready")
                 showStatusMessage("Sunmi PaySDK connected successfully ✓")
+                // Start NFC polling immediately when SDK connects (fixes race condition)
+                if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                    startSunmiNfcPolling()
+                }
             }
         }
         LogOverlayHelper.attach(this)
@@ -244,23 +248,53 @@ abstract class MainActivity : AppCompatActivity() {
         val isSunmi = android.os.Build.MANUFACTURER.equals("SUNMI", ignoreCase = true)
         val adapter = NfcAdapter.getDefaultAdapter(this)
 
-        if (isSunmi && adapter == null) {
-            // SUNMI payment terminal — standard NFC is disabled, use PaySDK
-            if (SunmiPaySdkManager.isConnected) {
+        if (isSunmi) {
+            // SUNMI device — always try to use SUNMI Pay SDK first
+            if (SunmiPaySdkManager.isConnected && SunmiPaySdkManager.readCardOpt != null) {
                 startSunmiNfcPolling()
-            } else if (SunmiPaySdkManager.initError != null) {
-                Snackbar.make(
-                    findViewById(android.R.id.content),
-                    "SUNMI PaySDK Error: ${SunmiPaySdkManager.initError}",
-                    Snackbar.LENGTH_LONG
-                ).show()
+            } else if (SunmiPaySdkManager.initStatus == "Service Not Found" || 
+                       SunmiPaySdkManager.initStatus == "No Card Reader" ||
+                       SunmiPaySdkManager.initStatus == "Init Failed") {
+                // SUNMI Pay SDK failed or is not available. Fall back to standard NFC if available.
+                if (adapter != null) {
+                    enableStandardNfc(adapter)
+                } else {
+                    Snackbar.make(
+                        findViewById(android.R.id.content),
+                        "SUNMI PaySDK Error: ${SunmiPaySdkManager.initError ?: "NFC not supported"}",
+                        Snackbar.LENGTH_LONG
+                    ).show()
+                }
+            } else if (SunmiPaySdkManager.initStatus == "Initializing") {
+                Log.i(TAG, "PaySDK connection in progress, chaining polling callback + setting timeout.")
+                // Chain a callback so that when SDK connects, NFC polling starts automatically
+                SunmiPaySdkManager.chainOnConnectedCallback { _ ->
+                    Log.i(TAG, "PaySDK connected (chained from onResume) — starting NFC polling")
+                    runOnUiThread {
+                        showStatusMessage("Sunmi PaySDK connected successfully ✓")
+                        startSunmiNfcPolling()
+                    }
+                }
+                // Timeout: If SDK doesn't connect within 3 seconds, fall back to standard NFC
+                mainLayout.postDelayed({
+                    if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+                        && SunmiPaySdkManager.initStatus == "Initializing") {
+                        Log.w(TAG, "PaySDK init timed out after 3s — falling back to standard NFC")
+                        val fallbackAdapter = NfcAdapter.getDefaultAdapter(this)
+                        if (fallbackAdapter != null) {
+                            enableStandardNfc(fallbackAdapter)
+                            showStatusMessage("Using standard NFC (PaySDK timeout)")
+                        } else {
+                            showStatusMessage("NFC not available on this device", isIndefinite = true)
+                        }
+                    }
+                }, 3000)
             } else {
                 Snackbar.make(
                     findViewById(android.R.id.content),
                     "SUNMI Payment device detected. Connecting to Pay SDK...",
                     Snackbar.LENGTH_SHORT
                 ).show()
-                // Re-init with callback to start polling once connected
                 SunmiPaySdkManager.onDisconnectedCallback = {
                     showStatusMessage("Sunmi PaySDK disconnected 🔌", isIndefinite = true)
                 }
@@ -270,13 +304,26 @@ abstract class MainActivity : AppCompatActivity() {
                     startSunmiNfcPolling()
                 }
             }
-        } else if (adapter == null) {
-            Snackbar.make(
-                findViewById(android.R.id.content),
-                "NFC is not supported on this device.",
-                Snackbar.LENGTH_LONG
-            ).show()
-        } else if (!adapter.isEnabled) {
+        } else {
+            // Non-SUNMI devices: use standard Android NFC
+            if (adapter == null) {
+                Snackbar.make(
+                    findViewById(android.R.id.content),
+                    "NFC is not supported on this device.",
+                    Snackbar.LENGTH_LONG
+                ).show()
+            } else {
+                enableStandardNfc(adapter)
+            }
+        }
+
+        if (passportNumberFromIntent) {
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
+        }
+    }
+
+    private fun enableStandardNfc(adapter: NfcAdapter) {
+        if (!adapter.isEnabled) {
             Snackbar.make(
                 findViewById(android.R.id.content),
                 "NFC is disabled. Please enable it in Settings.",
@@ -289,16 +336,11 @@ abstract class MainActivity : AppCompatActivity() {
                 }
             }.show()
         } else {
-            // Standard Android NFC foreground dispatch
             val intent = Intent(applicationContext, this.javaClass)
             intent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
             val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_MUTABLE)
             val filter = arrayOf(arrayOf("android.nfc.tech.IsoDep"))
             adapter.enableForegroundDispatch(this, pendingIntent, null, filter)
-        }
-
-        if (passportNumberFromIntent) {
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
         }
     }
 
@@ -339,6 +381,10 @@ abstract class MainActivity : AppCompatActivity() {
     // ──── Sunmi NFC Polling ────
 
     private fun startSunmiNfcPolling() {
+        if (SunmiPaySdkManager.readCardOpt == null) {
+            showStatusMessage("Sunmi NFC not supported or not ready.")
+            return
+        }
         showStatusMessage("NFC Ready. Please place your passport on the reader...", isIndefinite = true)
         SunmiPaySdkManager.startNfcPolling(
             timeoutSec = 120,
@@ -363,8 +409,12 @@ abstract class MainActivity : AppCompatActivity() {
                         }
                     } else {
                         showStatusMessage(getString(R.string.error_input))
-                        // Restart polling after input error
-                        startSunmiNfcPolling()
+                        // Restart polling after input error with 2-second delay to avoid freezing main thread
+                        mainLayout.postDelayed({
+                            if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                                startSunmiNfcPolling()
+                            }
+                        }, 2000)
                     }
                 }
             },
@@ -372,8 +422,14 @@ abstract class MainActivity : AppCompatActivity() {
                 Log.e(TAG, "Sunmi NFC polling error: $code — $message")
                 runOnUiThread {
                     showStatusMessage("NFC Error: $message")
-                    // Restart polling after error
-                    startSunmiNfcPolling()
+                    // Restart polling after error with 2-second delay to avoid freezing main thread
+                    mainLayout.postDelayed({
+                        if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                            if (SunmiPaySdkManager.isConnected && SunmiPaySdkManager.readCardOpt != null) {
+                                startSunmiNfcPolling()
+                            }
+                        }
+                    }, 2000)
                 }
             }
         )

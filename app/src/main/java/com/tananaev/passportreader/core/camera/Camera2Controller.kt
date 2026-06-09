@@ -304,9 +304,22 @@ class Camera2Controller(
             isFrontCamera = characteristics!!.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
  
             val map = characteristics!!.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
- 
-            val availableJpegSizes = map.getOutputSizes(android.graphics.ImageFormat.JPEG)
+            var availableJpegSizes = map.getOutputSizes(android.graphics.ImageFormat.JPEG)
                 ?.sortedByDescending { size -> size.width * size.height } ?: emptyList()
+
+            if (availableJpegSizes.isEmpty()) {
+                Log.w(TAG, "No JPEG output sizes supported by this camera! Falling back to SurfaceTexture sizes.")
+                val previewSizes = map.getOutputSizes(SurfaceTexture::class.java)
+                if (!previewSizes.isNullOrEmpty()) {
+                    availableJpegSizes = previewSizes.sortedByDescending { it.width * it.height }
+                }
+            }
+
+            if (availableJpegSizes.isEmpty()) {
+                Log.e(TAG, "Camera supports no output sizes. Aborting camera open.")
+                cameraOpenCloseLock.release()
+                return
+            }
  
             maxSensorProcessingSize = availableJpegSizes.firstOrNull()
                 ?: characteristics!!.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)?.let { Size(it.width(), it.height()) }
@@ -332,7 +345,8 @@ class Camera2Controller(
                 }
             } else {
                  val validResolutions = getResolutionsForAspectRatio(getActiveAspectRatio())
-                 validResolutions.mapNotNull { it.size }.minByOrNull { it.width * it.height } ?: availableJpegSizes.last()
+                 val supportedValid = validResolutions.mapNotNull { it.size }.filter { availableJpegSizes.contains(it) }
+                 supportedValid.minByOrNull { it.width * it.height } ?: availableJpegSizes.last()
             }
  
             Log.d(TAG, "Selected capture size: $finalCaptureSize")
@@ -531,13 +545,9 @@ class Camera2Controller(
     private fun getOptimalPreviewSize(sizes: Array<Size>, targetSize: Size): Size {
         val targetW = targetSize.width
         val targetH = targetSize.height
-
-        // If the exact selected resolution is supported by the preview surface, use it directly
-        if (sizes.contains(targetSize)) {
-            return targetSize
-        }
-
         val targetRatio = max(targetW, targetH).toDouble() / min(targetW, targetH).toDouble()
+
+        // 1. Find sizes that match aspect ratio exactly or closely (normalized to landscape)
         val tolerance = 0.05
         val matchedAspect = sizes.filter {
             val ratio = max(it.width, it.height).toDouble() / min(it.width, it.height).toDouble()
@@ -545,13 +555,13 @@ class Camera2Controller(
         }
 
         if (matchedAspect.isNotEmpty()) {
-            val exactMatch = matchedAspect.firstOrNull { it.width == targetW && it.height == targetH }
-            if (exactMatch != null) return exactMatch
-
-            // Return the largest size matching aspect ratio (no artificial 1080p cap)
-            return matchedAspect.maxByOrNull { it.width * it.height }!!
+            // Pick largest size that doesn't exceed 1080p for preview performance
+            return matchedAspect.filter { it.width <= 1920 && it.height <= 1080 }
+                .maxByOrNull { it.width * it.height }
+                ?: matchedAspect.maxByOrNull { it.width * it.height }!!
         }
 
+        // 2. If no exact ratio match, find one closest to the ratio
         return sizes.minByOrNull {
             val ratio = max(it.width, it.height).toDouble() / min(it.width, it.height).toDouble()
             Math.abs(ratio - targetRatio)
@@ -686,7 +696,7 @@ class Camera2Controller(
                     }
  
                     override fun onConfigureFailed(session: CameraCaptureSession) {
-                       // Failed
+                        Log.e(TAG, "Camera capture session configuration failed! This resolution may not be supported.")
                     }
                 },
                 backgroundHandler

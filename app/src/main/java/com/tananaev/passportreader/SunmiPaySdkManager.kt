@@ -40,6 +40,26 @@ object SunmiPaySdkManager {
 
     var onDisconnectedCallback: (() -> Unit)? = null
 
+    // ──── Callback Chaining ────
+
+    /**
+     * Chain an additional callback to be invoked when the SDK connects.
+     * Safe to call even when SDK is already connected — the callback fires immediately.
+     * This fixes the race condition where onResume runs while SDK is still "Initializing".
+     */
+    fun chainOnConnectedCallback(callback: (ReadCardOptV2) -> Unit) {
+        if (isConnected && readCardOpt != null) {
+            // Already connected — fire immediately
+            callback(readCardOpt!!)
+            return
+        }
+        val existing = onConnectedCallback
+        onConnectedCallback = { opt ->
+            existing?.invoke(opt)
+            callback(opt)
+        }
+    }
+
     // ──── Initialise / Destroy ────
 
     /**
@@ -50,20 +70,45 @@ object SunmiPaySdkManager {
      *                       [ReadCardOptV2] is ready.
      */
     fun init(context: Context, onConnected: ((ReadCardOptV2) -> Unit)? = null) {
+        if (isConnected) {
+            Log.i(TAG, "PaySDK already connected ✓")
+            readCardOpt?.let { onConnected?.invoke(it) }
+            return
+        }
+        if (initStatus == "Initializing") {
+            Log.i(TAG, "PaySDK is already initializing, chaining callbacks.")
+            onConnected?.let { newCallback ->
+                val existing = onConnectedCallback
+                onConnectedCallback = { opt ->
+                    existing?.invoke(opt)
+                    newCallback(opt)
+                }
+            }
+            return
+        }
+
         initStatus = "Initializing"
         initError = null
         onConnectedCallback = onConnected
 
         try {
             val kernel = SunmiPayKernel.getInstance()
-            val bound = kernel.initPaySDK(context, object : SunmiPayKernel.ConnectCallback {
+            val bound = kernel.initPaySDK(context.applicationContext, object : SunmiPayKernel.ConnectCallback {
                 override fun onConnectPaySDK() {
                     Log.i(TAG, "PaySDK connected ✓")
-                    readCardOpt = kernel.mReadCardOptV2
-                    isConnected = true
-                    initStatus = "Connected"
-                    readCardOpt?.let { opt ->
+                    val opt = kernel.mReadCardOptV2
+                    if (opt != null) {
+                        readCardOpt = opt
+                        isConnected = true
+                        initStatus = "Connected"
                         onConnectedCallback?.invoke(opt)
+                    } else {
+                        val err = "PaySDK connected but ReadCardOptV2 is null (NFC card reader not supported on this device)"
+                        Log.e(TAG, err)
+                        readCardOpt = null
+                        isConnected = false
+                        initStatus = "No Card Reader"
+                        initError = err
                     }
                 }
 
