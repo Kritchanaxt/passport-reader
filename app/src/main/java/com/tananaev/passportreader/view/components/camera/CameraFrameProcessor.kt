@@ -57,6 +57,7 @@ fun CameraFrameProcessor(
     
             withContext(Dispatchers.Default) {
                 var lastFrameTime = System.currentTimeMillis()
+                var manualScanStartTime = 0L
     
                 try {
                     while (isActive && !isProcessingBusy) {
@@ -70,6 +71,18 @@ fun CameraFrameProcessor(
                         if (isPreviewPaused) {
                             kotlinx.coroutines.delay(500)
                             continue
+                        }
+                        
+                        if (!isAutoScan) {
+                            if (!isManualScanTriggered) {
+                                manualScanStartTime = 0L
+                                kotlinx.coroutines.delay(100)
+                                continue
+                            } else {
+                                if (manualScanStartTime == 0L) {
+                                    manualScanStartTime = System.currentTimeMillis()
+                                }
+                            }
                         }
         
                         if (!isCapturing && cameraController?.textureView != null) {
@@ -280,27 +293,13 @@ fun CameraFrameProcessor(
                                 var passedToCapture = false
          
                                 if (criteriaMet) {
-                                    val elapsedSinceStart = System.currentTimeMillis() - iterationStart
-                                    stableTime += elapsedSinceStart
- 
-                                    if (stableTime >= 2000L) {
-                                        if (faceBuffer2sState.value == null) {
-                                            faceBuffer2sState.value = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-                                        }
-                                    }
- 
-                                    if (stableTime >= 3000L) {
+                                    if (!isAutoScan) {
+                                        isManualScanTriggered = false
                                         isCapturing = true
                                         isPreviewPaused = true
                                         passedToCapture = true
- 
-                                        val buf = faceBuffer2sState.value
-                                        var captureBitmap = if (buf != null) {
-                                            buf.copy(Bitmap.Config.ARGB_8888, true)
-                                        } else {
-                                            bitmap.copy(Bitmap.Config.ARGB_8888, true)
-                                        }
- 
+                                        
+                                        var captureBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
                                         if (horizontalFlip || verticalFlip) {
                                             val flipMatrix = android.graphics.Matrix()
                                             val hScale = if (horizontalFlip) -1f else 1f
@@ -310,20 +309,75 @@ fun CameraFrameProcessor(
                                             captureBitmap.recycle()
                                             captureBitmap = flipped
                                         }
- 
+                                        
                                         currentOnImageCaptured.value(
                                             captureBitmap,
                                             isFront
                                         )
- 
+                                        
                                         stableTime = 0L
                                         faceBuffer2sState.value?.recycle()
                                         faceBuffer2sState.value = null
+                                    } else {
+                                        val elapsedSinceStart = System.currentTimeMillis() - iterationStart
+                                        stableTime += elapsedSinceStart
+      
+                                        if (stableTime >= 2000L) {
+                                            if (faceBuffer2sState.value == null) {
+                                                faceBuffer2sState.value = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+                                            }
+                                        }
+      
+                                        if (stableTime >= 3000L) {
+                                            isCapturing = true
+                                            isPreviewPaused = true
+                                            passedToCapture = true
+      
+                                            val buf = faceBuffer2sState.value
+                                            var captureBitmap = if (buf != null) {
+                                                buf.copy(Bitmap.Config.ARGB_8888, true)
+                                            } else {
+                                                bitmap.copy(Bitmap.Config.ARGB_8888, true)
+                                            }
+      
+                                            if (horizontalFlip || verticalFlip) {
+                                                val flipMatrix = android.graphics.Matrix()
+                                                val hScale = if (horizontalFlip) -1f else 1f
+                                                val vScale = if (verticalFlip) -1f else 1f
+                                                flipMatrix.postScale(hScale, vScale, captureBitmap.width / 2f, captureBitmap.height / 2f)
+                                                val flipped = Bitmap.createBitmap(captureBitmap, 0, 0, captureBitmap.width, captureBitmap.height, flipMatrix, true)
+                                                captureBitmap.recycle()
+                                                captureBitmap = flipped
+                                            }
+      
+                                            currentOnImageCaptured.value(
+                                                captureBitmap,
+                                                isFront
+                                            )
+      
+                                            stableTime = 0L
+                                            faceBuffer2sState.value?.recycle()
+                                            faceBuffer2sState.value = null
+                                        }
                                     }
                                 } else {
                                     stableTime = 0L
                                     faceBuffer2sState.value?.recycle()
                                     faceBuffer2sState.value = null
+                                    
+                                    if (!isAutoScan && isManualScanTriggered) {
+                                        val elapsed = System.currentTimeMillis() - manualScanStartTime
+                                        if (elapsed > 1500L) {
+                                            isManualScanTriggered = false
+                                            withContext(Dispatchers.Main) {
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "ไม่พบข้อมูลพาสปอร์ต กรุณาจัดวางให้ตรงกรอบแล้วลองใหม่",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                    }
                                 }
          
                                 if (!passedToCapture && !bitmap.isRecycled) {

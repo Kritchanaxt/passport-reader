@@ -167,6 +167,7 @@ object SunmiPaySdkManager {
         onCardFound: (uuid: String) -> Unit,
         onError: (code: Int, message: String) -> Unit,
     ) {
+        cancelNfcPolling()
         val opt = readCardOpt
         if (opt == null) {
             val msg = "ReadCardOptV2 not available — SDK not connected"

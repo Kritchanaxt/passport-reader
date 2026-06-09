@@ -50,7 +50,9 @@ data class AiState(
     val cpuUsage: String = "0.0%",
     val isCapturing: Boolean = false,
     val isFrontCamera: Boolean = false,
-    val autoFramingEnabled: Boolean = false
+    val autoFramingEnabled: Boolean = false,
+    val isAutoScan: Boolean = !android.os.Build.MANUFACTURER.equals("SUNMI", ignoreCase = true),
+    val isManualScanTriggered: Boolean = false
 )
  
 object AiStateManager {

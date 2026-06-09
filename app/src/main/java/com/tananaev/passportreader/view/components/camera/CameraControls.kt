@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.scale
 import com.tananaev.passportreader.core.AiMode
  
 @Composable
@@ -42,6 +43,10 @@ fun BoxScope.CameraControls(
     aiMode: AiMode,
     onBackClick: () -> Unit
 ) {
+    val composeState = com.tananaev.passportreader.core.AiStateManager.state.collectAsState()
+    val isAutoScan = composeState.value.isAutoScan
+    val isManualScanTriggered = composeState.value.isManualScanTriggered
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -183,29 +188,28 @@ fun BoxScope.CameraControls(
             modifier = Modifier.padding(start = 4.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (isCapturing) {
-                    CircularProgressIndicator(
-                        color = Color(0xFF007AFF),
-                        strokeWidth = 1.2.dp,
-                        modifier = Modifier.size(10.dp)
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .background(
-                                if (stableTime > 0) Color.Yellow
-                                else if (!isProcessingBusy) Color.Green
-                                else Color.Gray,
-                                CircleShape
-                            )
-                    )
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable {
+                    val newMode = !isAutoScan
+                    com.tananaev.passportreader.core.AiStateManager.updateState { it.copy(isAutoScan = newMode) }
                 }
-                Spacer(modifier = Modifier.width(6.dp))
+            ) {
+                Switch(
+                    checked = isAutoScan,
+                    onCheckedChange = { newMode ->
+                        com.tananaev.passportreader.core.AiStateManager.updateState { it.copy(isAutoScan = newMode) }
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFF2563EB),
+                        uncheckedThumbColor = Color.Gray,
+                        uncheckedTrackColor = Color.White.copy(alpha = 0.2f)
+                    ),
+                    modifier = Modifier.scale(0.8f)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    "AUTO-SNAP",
+                    "AUTO-SCAN",
                     color = Color.White.copy(alpha = 0.9f),
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
@@ -264,6 +268,47 @@ fun BoxScope.CameraControls(
                         null,
                         tint = Color.White.copy(alpha = 0.6f),
                         modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+    }
+
+    if (!isAutoScan) {
+        val isManualScanning = isManualScanTriggered
+        Box(
+            modifier = with(this@CameraControls) {
+                Modifier.align(Alignment.BottomCenter)
+            }.padding(bottom = 100.dp)
+        ) {
+            Button(
+                onClick = {
+                    if (!isManualScanning && !isCapturing && !isProcessingBusy) {
+                        com.tananaev.passportreader.core.AiStateManager.updateState { it.copy(isManualScanTriggered = true) }
+                    }
+                },
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isManualScanning) Color(0xFF2563EB).copy(alpha = 0.6f) else Color(0xFF2563EB),
+                    disabledContainerColor = Color.Gray
+                ),
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier
+                    .size(72.dp)
+                    .border(4.dp, Color.White, CircleShape)
+            ) {
+                if (isManualScanning) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        modifier = Modifier.size(32.dp),
+                        strokeWidth = 3.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.CameraAlt,
+                        contentDescription = "Scan Now",
+                        tint = Color.White,
+                        modifier = Modifier.size(36.dp)
                     )
                 }
             }

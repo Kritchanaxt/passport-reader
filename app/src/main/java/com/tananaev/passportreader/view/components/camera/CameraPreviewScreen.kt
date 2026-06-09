@@ -79,6 +79,15 @@ class CameraStateWrapper(private val composeState: State<AiState>) {
     var isFrontCamera: Boolean
         get() = composeState.value.isFrontCamera
         set(value) { AiStateManager.updateState { it.copy(isFrontCamera = value) } }
+    var autoFramingEnabled: Boolean
+        get() = composeState.value.autoFramingEnabled
+        set(value) { AiStateManager.updateState { it.copy(autoFramingEnabled = value) } }
+    var isAutoScan: Boolean
+        get() = composeState.value.isAutoScan
+        set(value) { AiStateManager.updateState { it.copy(isAutoScan = value) } }
+    var isManualScanTriggered: Boolean
+        get() = composeState.value.isManualScanTriggered
+        set(value) { AiStateManager.updateState { it.copy(isManualScanTriggered = value) } }
 }
  
 @OptIn(ExperimentalMaterial3Api::class)

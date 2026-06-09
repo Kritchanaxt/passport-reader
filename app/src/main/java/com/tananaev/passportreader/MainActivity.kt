@@ -92,6 +92,9 @@ abstract class MainActivity : AppCompatActivity() {
     private lateinit var loadingLayout: View
     private var statusSnackbar: Snackbar? = null
 
+    private var restartPollingRunnable: Runnable? = null
+    private var sdkTimeoutRunnable: Runnable? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -276,7 +279,8 @@ abstract class MainActivity : AppCompatActivity() {
                     }
                 }
                 // Timeout: If SDK doesn't connect within 3 seconds, fall back to standard NFC
-                mainLayout.postDelayed({
+                sdkTimeoutRunnable?.let { mainLayout.removeCallbacks(it) }
+                val timeoutRunnable = Runnable {
                     if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
                         && SunmiPaySdkManager.initStatus == "Initializing") {
                         Log.w(TAG, "PaySDK init timed out after 3s — falling back to standard NFC")
@@ -288,7 +292,9 @@ abstract class MainActivity : AppCompatActivity() {
                             showStatusMessage("NFC not available on this device", isIndefinite = true)
                         }
                     }
-                }, 3000)
+                }
+                sdkTimeoutRunnable = timeoutRunnable
+                mainLayout.postDelayed(timeoutRunnable, 3000)
             } else {
                 Snackbar.make(
                     findViewById(android.R.id.content),
@@ -410,11 +416,14 @@ abstract class MainActivity : AppCompatActivity() {
                     } else {
                         showStatusMessage(getString(R.string.error_input))
                         // Restart polling after input error with 2-second delay to avoid freezing main thread
-                        mainLayout.postDelayed({
+                        restartPollingRunnable?.let { mainLayout.removeCallbacks(it) }
+                        val runnable = Runnable {
                             if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
                                 startSunmiNfcPolling()
                             }
-                        }, 2000)
+                        }
+                        restartPollingRunnable = runnable
+                        mainLayout.postDelayed(runnable, 2000)
                     }
                 }
             },
@@ -423,13 +432,16 @@ abstract class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     showStatusMessage("NFC Error: $message")
                     // Restart polling after error with 2-second delay to avoid freezing main thread
-                    mainLayout.postDelayed({
+                    restartPollingRunnable?.let { mainLayout.removeCallbacks(it) }
+                    val runnable = Runnable {
                         if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
                             if (SunmiPaySdkManager.isConnected && SunmiPaySdkManager.readCardOpt != null) {
                                 startSunmiNfcPolling()
                             }
                         }
-                    }, 2000)
+                    }
+                    restartPollingRunnable = runnable
+                    mainLayout.postDelayed(runnable, 2000)
                 }
             }
         )
@@ -702,6 +714,16 @@ abstract class MainActivity : AppCompatActivity() {
         super.onPause()
         val adapter = NfcAdapter.getDefaultAdapter(this)
         adapter?.disableForegroundDispatch(this)
+        
+        restartPollingRunnable?.let {
+            mainLayout.removeCallbacks(it)
+            restartPollingRunnable = null
+        }
+        sdkTimeoutRunnable?.let {
+            mainLayout.removeCallbacks(it)
+            sdkTimeoutRunnable = null
+        }
+
         // Stop Sunmi polling when activity goes to background
         stopSunmiNfcPolling()
     }
