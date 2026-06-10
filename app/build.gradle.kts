@@ -17,7 +17,7 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 23
-        versionName = "3.8"
+        versionName = "3.9"
         ndk {
             abiFilters.addAll(setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
@@ -95,6 +95,7 @@ dependencies {
     implementation(libs.scuba.sc.android)
     implementation(libs.spongycastle.prov)
     implementation(libs.jnbis)
+    implementation("dev.keiji.jp2:jp2-android:1.0.5")
     implementation(libs.bcpkix.jdk15on) // do not update
     implementation(libs.commons.io)
     implementation(libs.camerax.core)
