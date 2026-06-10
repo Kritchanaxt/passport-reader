@@ -13,7 +13,7 @@ camerax-core = "androidx.camera:camera-core:1.4.0"
 camerax-camera2 = "androidx.camera:camera-camera2:1.4.0"
 camerax-lifecycle = "androidx.camera:camera-lifecycle:1.4.0"
 camerax-view = "androidx.camera:camera-view:1.4.0"
-mlkit-text-recognition = "com.google.android.gms:play-services-mlkit-text-recognition:19.0.1"
+mlkit-text-recognition = "com.google.mlkit:text-recognition:16.0.0"
 firebase-bom = "com.google.firebase:firebase-bom:34.3.0"
 firebase-analytics = { module = "com.google.firebase:firebase-analytics" }
 firebase-crashlytics = { module = "com.google.firebase:firebase-crashlytics" }

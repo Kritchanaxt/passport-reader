@@ -51,6 +51,17 @@ class ResultActivity : AppCompatActivity() {
         if (intent.hasExtra(KEY_PHOTO)) {
             @Suppress("DEPRECATION")
             findViewById<ImageView>(R.id.view_photo).setImageBitmap(intent.getParcelableExtra(KEY_PHOTO))
+        } else if (intent.hasExtra(KEY_PHOTO_BASE64)) {
+            val base64Str = intent.getStringExtra(KEY_PHOTO_BASE64)
+            if (!base64Str.isNullOrEmpty()) {
+                try {
+                    val decodedBytes = android.util.Base64.decode(base64Str, android.util.Base64.DEFAULT)
+                    val bitmap = android.graphics.BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+                    findViewById<ImageView>(R.id.view_photo).setImageBitmap(bitmap)
+                } catch (e: Exception) {
+                    android.util.Log.e("ResultActivity", "Failed to decode photoBase64", e)
+                }
+            }
         }
     }
 

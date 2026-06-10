@@ -21,6 +21,12 @@ android {
         ndk {
             abiFilters.addAll(setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
+        externalNativeBuild {
+            cmake {
+                cppFlags("-fexceptions", "-frtti")
+                arguments("-DANDROID_STL=c++_shared")
+            }
+        }
     }
  
     signingConfigs {
@@ -64,6 +70,13 @@ android {
     packaging {
         resources {
             excludes += listOf("META-INF/LICENSE", "META-INF/NOTICE")
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 }

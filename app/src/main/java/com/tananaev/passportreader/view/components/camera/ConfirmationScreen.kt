@@ -159,6 +159,7 @@ private fun TechnicalMetadataCard(
     val modeText = when (aiMode) {
         AiMode.OCR -> "MRZ Passport Scanner"
         AiMode.TEXT_RECOGNITION -> "Text Recognition v2"
+        AiMode.PADDLE_OCR -> "PaddleOCR v5"
     }
 
     Card(

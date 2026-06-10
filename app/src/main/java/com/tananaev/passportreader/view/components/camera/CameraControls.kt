@@ -256,6 +256,7 @@ fun BoxScope.CameraControls(
                     val displayName = when (aiMode) {
                         AiMode.OCR -> "MRZ Passport Scanner"
                         AiMode.TEXT_RECOGNITION -> "Text Recognition"
+                        AiMode.PADDLE_OCR -> "PaddleOCR v5"
                     }
                     Text(
                         text = displayName,

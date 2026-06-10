@@ -147,7 +147,10 @@ object MRZParser {
 
         // Remove duplicates
         val allLines = mergedLines.distinct()
+        return parseFromLines(allLines)
+    }
 
+    fun parseFromLines(allLines: List<String>): ParsedMRZ? {
         // ============================================================
         // STEP 4: Try matching MRZ_SECONDLINE on each candidate line
         // ============================================================
@@ -217,6 +220,71 @@ object MRZParser {
             }
         }
         return null
+    }
+
+    data class PaddleOcrResultItem(
+        val label: String,
+        val x0: Float,
+        val y0: Float,
+        val prob: Float
+    )
+
+    fun getMergedRawLinesFromPaddle(jsonStr: String): List<String> {
+        val list = mutableListOf<PaddleOcrResultItem>()
+        try {
+            val array = org.json.JSONArray(jsonStr)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(PaddleOcrResultItem(
+                    label = obj.optString("label", ""),
+                    x0 = obj.optDouble("x0", 0.0).toFloat(),
+                    y0 = obj.optDouble("y0", 0.0).toFloat(),
+                    prob = obj.optDouble("prob", 0.0).toFloat()
+                ))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MRZParser", "Error parsing paddle JSON", e)
+        }
+        
+        if (list.isEmpty()) return emptyList()
+        
+        // Group by Y tolerance
+        val yTolerance = 20f
+        val sortedByY = list.sortedBy { it.y0 }
+        val rowGroups = mutableListOf<MutableList<PaddleOcrResultItem>>()
+        
+        for (item in sortedByY) {
+            val matchedGroup = rowGroups.find { group ->
+                group.any { kotlin.math.abs(it.y0 - item.y0) < yTolerance }
+            }
+            if (matchedGroup != null) {
+                matchedGroup.add(item)
+            } else {
+                rowGroups.add(mutableListOf(item))
+            }
+        }
+        
+        val mergedLines = mutableListOf<String>()
+        val sortedRowGroups = rowGroups.sortedBy { group -> group.map { it.y0 }.average() }
+        for (group in sortedRowGroups) {
+            val sortedByX = group.sortedBy { it.x0 }
+            val merged = sortedByX.joinToString("") { it.label }
+            val cleaned = normalizeLine(merged)
+            if (cleaned.isNotEmpty()) {
+                mergedLines.add(cleaned)
+                // Also add a padded version (fill gaps with '<' to reach 44 chars)
+                if (cleaned.length in 20..43) {
+                    val padded = cleaned.padEnd(44, '<')
+                    mergedLines.add(padded)
+                }
+            }
+        }
+        return mergedLines.distinct()
+    }
+
+    fun parseFromPaddleJson(jsonStr: String): ParsedMRZ? {
+        val mergedLines = getMergedRawLinesFromPaddle(jsonStr)
+        return parseFromLines(mergedLines)
     }
 
     private fun cleanDocumentNumber(documentNumber: String, checkDigit: Int): String? {

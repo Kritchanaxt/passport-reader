@@ -9,7 +9,8 @@ import kotlinx.coroutines.flow.update
  
 enum class AiMode {
     TEXT_RECOGNITION,
-    OCR
+    OCR,
+    PADDLE_OCR
 }
  
 data class AIDetectedItem(
@@ -104,4 +105,24 @@ object AIManager {
     private val isBusyFlag = java.util.concurrent.atomic.AtomicBoolean(false)
     fun isBusy(): Boolean = isBusyFlag.get()
     fun setBusy(busy: Boolean) = isBusyFlag.set(busy)
+
+    private var activeProcessor: com.tananaev.passportreader.core.contracts.AIProcessor? = null
+
+    fun getActiveProcessor(): com.tananaev.passportreader.core.contracts.AIProcessor? = activeProcessor
+
+    fun switchProcessor(processor: com.tananaev.passportreader.core.contracts.AIProcessor, context: android.content.Context, config: com.tananaev.passportreader.core.feature.FeatureConfig): Boolean {
+        activeProcessor?.release()
+        activeProcessor = processor
+        val aiConfig = com.tananaev.passportreader.core.contracts.AIConfig(
+            useGpu = config.useGpu,
+            threads = config.threads,
+            options = config.options
+        )
+        return processor.init(context, aiConfig)
+    }
+
+    fun release() {
+        activeProcessor?.release()
+        activeProcessor = null
+    }
 }

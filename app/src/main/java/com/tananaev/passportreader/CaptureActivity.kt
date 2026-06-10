@@ -57,6 +57,31 @@ class CaptureActivity : AppCompatActivity() {
     private var mrzResult: MRZParser.ParsedMRZ? = null
     private var rawOcrTextStore: String = ""
 
+    private val textRecognizer by lazy {
+        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    }
+
+    private fun getPaddleOcrProcessor(): com.tananaev.passportreader.features.ocr_paddle.OCRProcessor {
+        if (com.tananaev.passportreader.core.AIManager.getActiveProcessor() !is com.tananaev.passportreader.features.ocr_paddle.OCRProcessor) {
+            com.tananaev.passportreader.core.feature.FeatureRegistry.enable(
+                this,
+                "paddle_ocr",
+                com.tananaev.passportreader.core.feature.FeatureConfig(useGpu = false, threads = 4)
+            )
+        }
+        return com.tananaev.passportreader.core.AIManager.getActiveProcessor() as com.tananaev.passportreader.features.ocr_paddle.OCRProcessor
+    }
+
+    private fun getTextRecognitionProcessor(): com.tananaev.passportreader.features.ocr_mlkit.TextRecognitionProcessor {
+        if (com.tananaev.passportreader.core.AIManager.getActiveProcessor() !is com.tananaev.passportreader.features.ocr_mlkit.TextRecognitionProcessor) {
+            com.tananaev.passportreader.core.feature.FeatureRegistry.enable(
+                this,
+                "text_recognition"
+            )
+        }
+        return com.tananaev.passportreader.core.AIManager.getActiveProcessor() as com.tananaev.passportreader.features.ocr_mlkit.TextRecognitionProcessor
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
  
@@ -158,11 +183,86 @@ class CaptureActivity : AppCompatActivity() {
 
  
     private suspend fun processFrame(bitmap: Bitmap, aiMode: AiMode): Pair<Boolean, List<AIDetectedItem>> {
+        if (aiMode == AiMode.PADDLE_OCR) {
+            val ocr = getPaddleOcrProcessor()
+            val jsonResult = ocr.getRawJson(bitmap) ?: "[]"
+            
+            val mergedLines = MRZParser.getMergedRawLinesFromPaddle(jsonResult)
+            rawOcrTextStore = mergedLines.joinToString("\n")
+            
+            val parsedResult = MRZParser.parseFromPaddleJson(jsonResult)
+            val detectedItems = mutableListOf<AIDetectedItem>()
+            
+            try {
+                val array = org.json.JSONArray(jsonResult)
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    val label = obj.optString("label", "")
+                    val prob = obj.optDouble("prob", 0.0).toFloat()
+                    
+                    val x0 = obj.optDouble("x0", 0.0).toFloat()
+                    val y0 = obj.optDouble("y0", 0.0).toFloat()
+                    val x1 = obj.optDouble("x1", 0.0).toFloat()
+                    val y1 = obj.optDouble("y1", 0.0).toFloat()
+                    val x2 = obj.optDouble("x2", 0.0).toFloat()
+                    val y2 = obj.optDouble("y2", 0.0).toFloat()
+                    val x3 = obj.optDouble("x3", 0.0).toFloat()
+                    val y3 = obj.optDouble("y3", 0.0).toFloat()
+                    
+                    val minX = minOf(minOf(x0, x1), minOf(x2, x3))
+                    val maxX = maxOf(maxOf(x0, x1), maxOf(x2, x3))
+                    val minY = minOf(minOf(y0, y1), minOf(y2, y3))
+                    val maxY = maxOf(maxOf(y0, y1), maxOf(y2, y3))
+                    
+                    detectedItems.add(
+                        AIDetectedItem(
+                            label = label,
+                            confidence = prob,
+                            boundingBox = android.graphics.RectF(minX, minY, maxX, maxY)
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("CaptureActivity", "Error parsing paddle items", e)
+            }
+            
+            return if (parsedResult != null) {
+                mrzResult = parsedResult
+                Pair(true, detectedItems)
+            } else {
+                Pair(false, detectedItems)
+            }
+        }
+
+        if (aiMode == AiMode.TEXT_RECOGNITION) {
+            val processor = getTextRecognitionProcessor()
+            val result = processor.process(bitmap)
+            
+            val detectedItems = result.items.map { item ->
+                AIDetectedItem(
+                    label = item.label,
+                    confidence = item.confidence,
+                    boundingBox = android.graphics.RectF(item.boundingBox)
+                )
+            }
+            
+            rawOcrTextStore = detectedItems.joinToString("\n") { it.label }
+            
+            val mergedLines = detectedItems.map { it.label }
+            val parsedResult = MRZParser.parseGeneralText(mergedLines)
+            
+            return if (parsedResult != null) {
+                mrzResult = parsedResult
+                Pair(true, detectedItems)
+            } else {
+                Pair(false, detectedItems)
+            }
+        }
+
         return suspendCancellableCoroutine { continuation ->
             val image = InputImage.fromBitmap(bitmap, 0)
-            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             
-            recognizer.process(image)
+            textRecognizer.process(image)
                 .addOnSuccessListener { visionText ->
                     // Reconstruct continuous lines by merging horizontal segments based on Y coordinates
                     val mergedLines = MRZParser.getMergedRawLines(visionText)
@@ -240,6 +340,12 @@ class CaptureActivity : AppCompatActivity() {
         }
     }
  
+    override fun onDestroy() {
+        super.onDestroy()
+        textRecognizer.close()
+        com.tananaev.passportreader.core.AIManager.release()
+    }
+
     companion object {
         private const val TAG = "CaptureActivity"
         private const val REQUEST_CODE_PERMISSIONS = 10

@@ -24,5 +24,6 @@ class MainApplication : Application() {
         super.onCreate()
         Security.insertProviderAt(BouncyCastleProvider(), 1)
         AppLog.init(this)
+        com.tananaev.passportreader.core.feature.FeatureInitializer.registerAll()
     }
 }
