@@ -1,4 +1,4 @@
-package com.tananaev.passportreader
+package com.tananaev.passportreader.utils.logging
 
 import android.animation.ObjectAnimator
 import android.annotation.SuppressLint

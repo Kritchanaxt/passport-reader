@@ -1,11 +1,13 @@
-package com.tananaev.passportreader
+package com.tananaev.passportreader.view
  
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
-import com.tananaev.passportreader.AppLog as Log
+import com.tananaev.passportreader.utils.logging.AppLog as Log
+import com.tananaev.passportreader.utils.logging.LogOverlayHelper
+import com.tananaev.passportreader.features.mrz.MRZParser
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
@@ -187,8 +189,16 @@ class CaptureActivity : AppCompatActivity() {
             val ocr = getPaddleOcrProcessor()
             val jsonResult = ocr.getRawJson(bitmap) ?: "[]"
             
-            val mergedLines = MRZParser.getMergedRawLinesFromPaddle(jsonResult)
-            rawOcrTextStore = mergedLines.joinToString("\n")
+            // Store only raw labels for display (without padded duplicates)
+            val rawLabels = mutableListOf<String>()
+            try {
+                val displayArray = org.json.JSONArray(jsonResult)
+                for (i in 0 until displayArray.length()) {
+                    val label = displayArray.getJSONObject(i).optString("label", "")
+                    if (label.isNotBlank()) rawLabels.add(label)
+                }
+            } catch (_: Exception) {}
+            rawOcrTextStore = rawLabels.joinToString("\n")
             
             val parsedResult = MRZParser.parseFromPaddleJson(jsonResult)
             val detectedItems = mutableListOf<AIDetectedItem>()
@@ -234,31 +244,8 @@ class CaptureActivity : AppCompatActivity() {
             }
         }
 
-        if (aiMode == AiMode.TEXT_RECOGNITION) {
-            val processor = getTextRecognitionProcessor()
-            val result = processor.process(bitmap)
-            
-            val detectedItems = result.items.map { item ->
-                AIDetectedItem(
-                    label = item.label,
-                    confidence = item.confidence,
-                    boundingBox = android.graphics.RectF(item.boundingBox)
-                )
-            }
-            
-            rawOcrTextStore = detectedItems.joinToString("\n") { it.label }
-            
-            val mergedLines = detectedItems.map { it.label }
-            val parsedResult = MRZParser.parseGeneralText(mergedLines)
-            
-            return if (parsedResult != null) {
-                mrzResult = parsedResult
-                Pair(true, detectedItems)
-            } else {
-                Pair(false, detectedItems)
-            }
-        }
-
+        // Text Recognition v2 and OCR both use the same textRecognizer + MRZParser.parse() pipeline
+        // This ensures Y-position merging and MRZ regex matching work identically for both modes
         return suspendCancellableCoroutine { continuation ->
             val image = InputImage.fromBitmap(bitmap, 0)
             
@@ -268,11 +255,10 @@ class CaptureActivity : AppCompatActivity() {
                     val mergedLines = MRZParser.getMergedRawLines(visionText)
                     rawOcrTextStore = mergedLines.joinToString("\n")
 
-                    val parsedResult = if (aiMode == AiMode.OCR) {
-                        MRZParser.parse(visionText)
-                    } else {
-                        MRZParser.parseGeneralText(mergedLines)
-                    }
+                    // Use MRZParser.parse() for both OCR and TEXT_RECOGNITION modes
+                    // This uses element-level bounding boxes to group fragments by Y-position
+                    // then applies MRZ regular expressions for accurate parsing
+                    val parsedResult = MRZParser.parse(visionText)
 
                     if (parsedResult != null) {
                         val detectedItems = mutableListOf<AIDetectedItem>()

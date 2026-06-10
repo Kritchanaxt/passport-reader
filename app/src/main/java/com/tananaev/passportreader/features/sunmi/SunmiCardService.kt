@@ -1,6 +1,6 @@
-package com.tananaev.passportreader
+package com.tananaev.passportreader.features.sunmi
 
-import com.tananaev.passportreader.AppLog as Log
+import com.tananaev.passportreader.utils.logging.AppLog as Log
 import com.sunmi.pay.hardware.aidl.AidlConstants
 import com.sunmi.pay.hardware.aidlv2.readcard.ReadCardOptV2
 import net.sf.scuba.smartcards.CardService

@@ -16,7 +16,9 @@
 @file:Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
 
 package com.tananaev.passportreader
-
+ 
+import com.tananaev.passportreader.view.CaptureActivity
+import com.tananaev.passportreader.view.ResultActivity
 import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
@@ -30,7 +32,11 @@ import android.preference.PreferenceManager
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Base64
-import com.tananaev.passportreader.AppLog as Log
+import com.tananaev.passportreader.utils.logging.AppLog as Log
+import com.tananaev.passportreader.utils.logging.LogOverlayHelper
+import com.tananaev.passportreader.features.sunmi.SunmiPaySdkManager
+import com.tananaev.passportreader.features.sunmi.SunmiCardService
+import com.tananaev.passportreader.R
 import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
@@ -43,7 +49,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.floatingactionbutton.FloatingActionButton
-import com.tananaev.passportreader.ImageUtil.decodeImage
+import com.tananaev.passportreader.utils.ImageUtil.decodeImage
 import com.wdullaer.materialdatetimepicker.date.DatePickerDialog
 import net.sf.scuba.smartcards.CardService
 import org.apache.commons.io.IOUtils

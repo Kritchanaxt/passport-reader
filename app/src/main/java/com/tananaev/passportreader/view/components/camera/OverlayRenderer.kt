@@ -74,7 +74,7 @@ fun OverlayRenderer(
         drawContext.canvas.nativeCanvas.restore()
  
         // Draw the Target Box in Red for OCR and Text Recognition modes
-        if (aiMode == AiMode.OCR || aiMode == AiMode.TEXT_RECOGNITION) {
+        if (aiMode == AiMode.OCR || aiMode == AiMode.TEXT_RECOGNITION || aiMode == AiMode.PADDLE_OCR) {
             val mrzPaint = android.graphics.Paint().apply {
                 style = android.graphics.Paint.Style.STROKE
                 strokeWidth = 4f
@@ -92,7 +92,11 @@ fun OverlayRenderer(
                 isAntiAlias = true
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
             }
-            val mrzLabel = if (aiMode == AiMode.OCR) "กรอบวิเคราะห์แถบ MRZ" else "กรอบวิเคราะห์ข้อความ"
+            val mrzLabel = when (aiMode) {
+                AiMode.OCR -> "กรอบวิเคราะห์แถบ MRZ"
+                AiMode.PADDLE_OCR -> "กรอบวิเคราะห์ PaddleOCR (MRZ)"
+                else -> "กรอบวิเคราะห์ข้อความ"
+            }
             val mrzLabelW = mrzLabelPaint.measureText(mrzLabel)
             drawContext.canvas.nativeCanvas.drawText(
                 mrzLabel,
@@ -109,7 +113,7 @@ fun OverlayRenderer(
         val topOffset = if (useCropMode) (size.height - cropH) / 2f else 0f
  
         val boxScaleX = if (bitmapWidth > 0) cropW / bitmapWidth else 1f
-        val boxScaleY = if ((aiMode == AiMode.OCR || aiMode == AiMode.TEXT_RECOGNITION) && useCropMode) {
+        val boxScaleY = if ((aiMode == AiMode.OCR || aiMode == AiMode.TEXT_RECOGNITION || aiMode == AiMode.PADDLE_OCR) && useCropMode) {
             if (bitmapHeight > 0) (0.30f * cropH) / bitmapHeight else 1f
         } else {
             if (bitmapHeight > 0) cropH / bitmapHeight else 1f
@@ -125,7 +129,7 @@ fun OverlayRenderer(
  
         latestDetections.forEach { item ->
             val r = item.boundingBox
-            val mappedRect = if ((aiMode == AiMode.OCR || aiMode == AiMode.TEXT_RECOGNITION) && useCropMode) {
+            val mappedRect = if ((aiMode == AiMode.OCR || aiMode == AiMode.TEXT_RECOGNITION || aiMode == AiMode.PADDLE_OCR) && useCropMode) {
                 android.graphics.RectF(
                     leftOffset + r.left * boxScaleX, (topOffset + cropH * 0.70f) + r.top * boxScaleY,
                     leftOffset + r.right * boxScaleX, (topOffset + cropH * 0.70f) + r.bottom * boxScaleY

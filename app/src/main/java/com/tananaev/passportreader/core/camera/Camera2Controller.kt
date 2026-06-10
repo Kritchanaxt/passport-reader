@@ -15,7 +15,7 @@ import android.media.Image
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
-import com.tananaev.passportreader.AppLog as Log
+import com.tananaev.passportreader.utils.logging.AppLog as Log
 import android.util.Size
 import android.view.Surface
 import android.view.TextureView

@@ -1,4 +1,4 @@
-package com.tananaev.passportreader
+package com.tananaev.passportreader.features.mrz
 
 import com.google.mlkit.vision.text.Text
 import org.jmrtd.lds.icao.MRZInfo
@@ -6,12 +6,7 @@ import java.util.regex.Pattern
 
 object MRZParser {
 
-    private val REGEX_OLD_PASSPORT = "(?<documentNumber>[A-Z0-9<]{9})(?<checkDigitDocumentNumber>[0-9ILDSOG]{1})(?<nationality>[A-Z<]{3})(?<dateOfBirth>[0-9ILDSOG]{6})(?<checkDigitDateOfBirth>[0-9ILDSOG]{1})(?<sex>[FM<]){1}(?<expirationDate>[0-9ILDSOG]{6})(?<checkDigitExpiration>[0-9ILDSOG]{1})"
-    private val REGEX_IP_PASSPORT_LINE_1 = "\\bIP[A-Z<]{3}[A-Z0-9<]{9}[0-9]{1}"
-    private val REGEX_IP_PASSPORT_LINE_2 = "[0-9]{6}[0-9]{1}[FM<]{1}[0-9]{6}[0-9]{1}[A-Z<]{3}"
 
-    private val MRZ_FIRSTLINE = Regex("([A-Z])([A-Z0-9<])([A-Z]{3})([A-Z<]{36,39})")
-    private val MRZ_SECONDLINE = Regex("([A-Z0-9<]{9})([0-9ILDSOG])([A-Z<]{3})([0-9ILDSOG]{6})([0-9ILDSOG])([MF<])([0-9ILDSOG]{6})([0-9ILDSOG])([A-Z0-9<]{14})([0-9ILDSOG])([0-9ILDSOG])")
 
     data class ParsedMRZ(
         val documentNumber: String,
@@ -46,10 +41,11 @@ object MRZParser {
             .replace("\u2060", "")  // Word joiner
             .replace("\uFEFF", "")  // BOM / Zero-width no-break space
 
-        // 2. Normalize ALL unicode angle/chevron/guillemet/triangle variants to '<'
-        result = FILLER_CHAR_REGEX.replace(result, "<")
+        // 2. Convert lowercase c and k (often misread for <) to <
+        result = result.replace("c", "<").replace("k", "<")
 
-        // 3. Collapse consecutive '<' (e.g. "<<<" stays "<<<", already correct)
+        // 3. Normalize ALL non-alphanumeric characters (except <) to <
+        result = result.replace("[^A-Za-z0-9<]".toRegex(), "<")
 
         return result.uppercase()
     }
@@ -155,7 +151,7 @@ object MRZParser {
         // STEP 4: Try matching MRZ_SECONDLINE on each candidate line
         // ============================================================
         for (line in allLines) {
-            val matchResult = MRZ_SECONDLINE.find(line)
+            val matchResult = MRZPatterns.MRZ_SECONDLINE.find(line)
             if (matchResult != null) {
                 val docNumGroup = matchResult.groupValues[1]
                 val checkDigitDocNumGroup = cleanDate(matchResult.groupValues[2]).toIntOrNull() ?: 0
@@ -172,6 +168,59 @@ object MRZParser {
         }
 
         // ============================================================
+        // STEP 4.5: Sliding window fuzzy parser for noisy OCR lines (e.g. PaddleOCR)
+        // ============================================================
+        for (line in allLines) {
+            val cleanLine = line.replace("[^A-Z0-9<]".toRegex(), "")
+            if (cleanLine.length < 28) continue
+            
+            for (i in 0..cleanLine.length - 28) {
+                val sub = cleanLine.substring(i, i + 28)
+                val docNumGroup = sub.substring(0, 9)
+                val checkDigitDocNumStr = sub.substring(9, 10)
+                val dobGroupStr = sub.substring(13, 19)
+                val checkDigitDobStr = sub.substring(19, 20)
+                val expGroupStr = sub.substring(21, 27)
+                val checkDigitExpStr = sub.substring(27, 28)
+                
+                val dobClean = cleanDate(dobGroupStr)
+                val expClean = cleanDate(expGroupStr)
+                val checkDigitDoc = cleanDate(checkDigitDocNumStr).toIntOrNull() ?: -1
+                val checkDigitDob = cleanDate(checkDigitDobStr).toIntOrNull() ?: -1
+                val checkDigitExp = cleanDate(checkDigitExpStr).toIntOrNull() ?: -1
+                
+                // Ensure DOB and Expiry date consist only of digits
+                if (!dobClean.all { it.isDigit() } || !expClean.all { it.isDigit() }) {
+                    continue
+                }
+                
+                // Basic validation for month/day ranges
+                val dobMonth = dobClean.substring(2, 4).toIntOrNull() ?: 0
+                val dobDay = dobClean.substring(4, 6).toIntOrNull() ?: 0
+                val expMonth = expClean.substring(2, 4).toIntOrNull() ?: 0
+                val expDay = expClean.substring(4, 6).toIntOrNull() ?: 0
+                
+                if (dobMonth !in 1..12 || dobDay !in 1..31 || expMonth !in 1..12 || expDay !in 1..31) {
+                    continue
+                }
+                
+                // Verify check digit for document number
+                val cleanDocNum = cleanDocumentNumber(docNumGroup, checkDigitDoc)
+                if (cleanDocNum != null) {
+                    return ParsedMRZ(cleanDocNum, dobClean, expClean)
+                }
+                
+                // Secondary check: Validate against calculated DOB/Expiry check digits
+                val dobCalculated = MRZInfo.checkDigit(dobClean).toString().toIntOrNull() ?: -2
+                val expCalculated = MRZInfo.checkDigit(expClean).toString().toIntOrNull() ?: -2
+                
+                if (dobCalculated == checkDigitDob || expCalculated == checkDigitExp) {
+                    return ParsedMRZ(docNumGroup.replace("O", "0"), dobClean, expClean)
+                }
+            }
+        }
+
+        // ============================================================
         // STEP 5: Fallback - concatenate all lines with hyphens
         // ============================================================
         var fullRead = ""
@@ -179,8 +228,7 @@ object MRZParser {
             fullRead += "$line-"
         }
 
-        val patternLineOldPassportType = Pattern.compile(REGEX_OLD_PASSPORT)
-        val matcherLineOldPassportType = patternLineOldPassportType.matcher(fullRead)
+        val matcherLineOldPassportType = MRZPatterns.REGEX_OLD_PASSPORT.matcher(fullRead)
 
         if (matcherLineOldPassportType.find()) {
             val documentNumber = matcherLineOldPassportType.group(1) ?: ""
@@ -195,10 +243,8 @@ object MRZParser {
                 return ParsedMRZ(documentNumber.replace("O", "0"), dateOfBirthDay, expirationDate)
             }
         } else {
-            val patternLineIPassportTypeLine1 = Pattern.compile(REGEX_IP_PASSPORT_LINE_1)
-            val matcherLineIPassportTypeLine1 = patternLineIPassportTypeLine1.matcher(fullRead)
-            val patternLineIPassportTypeLine2 = Pattern.compile(REGEX_IP_PASSPORT_LINE_2)
-            val matcherLineIPassportTypeLine2 = patternLineIPassportTypeLine2.matcher(fullRead)
+            val matcherLineIPassportTypeLine1 = MRZPatterns.REGEX_IP_PASSPORT_LINE_1.matcher(fullRead)
+            val matcherLineIPassportTypeLine2 = MRZPatterns.REGEX_IP_PASSPORT_LINE_2.matcher(fullRead)
 
             if (matcherLineIPassportTypeLine1.find() && matcherLineIPassportTypeLine2.find()) {
                 val line1 = matcherLineIPassportTypeLine1.group(0) ?: ""
@@ -222,63 +268,95 @@ object MRZParser {
         return null
     }
 
-    data class PaddleOcrResultItem(
-        val label: String,
-        val x0: Float,
-        val y0: Float,
-        val prob: Float
+    // Local data class with height for adaptive tolerance calculation
+    private data class PaddleLineFrag(
+        val text: String,
+        val centerY: Float,
+        val left: Float,
+        val height: Float
     )
 
     fun getMergedRawLinesFromPaddle(jsonStr: String): List<String> {
-        val list = mutableListOf<PaddleOcrResultItem>()
+        val fragments = mutableListOf<PaddleLineFrag>()
         try {
             val array = org.json.JSONArray(jsonStr)
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
-                list.add(PaddleOcrResultItem(
-                    label = obj.optString("label", ""),
-                    x0 = obj.optDouble("x0", 0.0).toFloat(),
-                    y0 = obj.optDouble("y0", 0.0).toFloat(),
-                    prob = obj.optDouble("prob", 0.0).toFloat()
-                ))
+                val label = obj.optString("label", "")
+                
+                val x0 = obj.optDouble("x0", 0.0).toFloat()
+                val y0 = obj.optDouble("y0", 0.0).toFloat()
+                val x1 = obj.optDouble("x1", 0.0).toFloat()
+                val y1 = obj.optDouble("y1", 0.0).toFloat()
+                val x2 = obj.optDouble("x2", 0.0).toFloat()
+                val y2 = obj.optDouble("y2", 0.0).toFloat()
+                val x3 = obj.optDouble("x3", 0.0).toFloat()
+                val y3 = obj.optDouble("y3", 0.0).toFloat()
+                
+                val minX = minOf(minOf(x0, x1), minOf(x2, x3))
+                val minY = minOf(minOf(y0, y1), minOf(y2, y3))
+                val maxY = maxOf(maxOf(y0, y1), maxOf(y2, y3))
+                val centerY = (minY + maxY) / 2f
+                val height = maxY - minY
+                
+                val cleaned = normalizeLine(label)
+                if (cleaned.isNotEmpty()) {
+                    fragments.add(PaddleLineFrag(
+                        text = cleaned,
+                        centerY = centerY,
+                        left = minX,
+                        height = height
+                    ))
+                }
             }
         } catch (e: Exception) {
             android.util.Log.e("MRZParser", "Error parsing paddle JSON", e)
         }
         
-        if (list.isEmpty()) return emptyList()
+        if (fragments.isEmpty()) return emptyList()
         
-        // Group by Y tolerance
-        val yTolerance = 20f
-        val sortedByY = list.sortedBy { it.y0 }
-        val rowGroups = mutableListOf<MutableList<PaddleOcrResultItem>>()
+        // Adaptive Y-tolerance: 40% of average line height, clamped to [8, 20]
+        val avgHeight = fragments.map { it.height }.average().toFloat()
+        val yTolerance = (avgHeight * 0.4f).coerceIn(8f, 20f)
         
-        for (item in sortedByY) {
+        val sortedByY = fragments.sortedBy { it.centerY }
+        val rowGroups = mutableListOf<MutableList<PaddleLineFrag>>()
+        
+        for (frag in sortedByY) {
             val matchedGroup = rowGroups.find { group ->
-                group.any { kotlin.math.abs(it.y0 - item.y0) < yTolerance }
+                group.any { kotlin.math.abs(it.centerY - frag.centerY) < yTolerance }
             }
             if (matchedGroup != null) {
-                matchedGroup.add(item)
+                if (matchedGroup.none { it.left == frag.left && it.text == frag.text }) {
+                    matchedGroup.add(frag)
+                }
             } else {
-                rowGroups.add(mutableListOf(item))
+                rowGroups.add(mutableListOf(frag))
             }
         }
         
         val mergedLines = mutableListOf<String>()
-        val sortedRowGroups = rowGroups.sortedBy { group -> group.map { it.y0 }.average() }
+        val sortedRowGroups = rowGroups.sortedBy { group -> group.map { it.centerY }.average() }
         for (group in sortedRowGroups) {
-            val sortedByX = group.sortedBy { it.x0 }
-            val merged = sortedByX.joinToString("") { it.label }
-            val cleaned = normalizeLine(merged)
-            if (cleaned.isNotEmpty()) {
-                mergedLines.add(cleaned)
-                // Also add a padded version (fill gaps with '<' to reach 44 chars)
-                if (cleaned.length in 20..43) {
-                    val padded = cleaned.padEnd(44, '<')
+            val sortedByX = group.sortedBy { it.left }
+            val merged = sortedByX.joinToString("") { it.text }
+            if (merged.isNotEmpty()) {
+                mergedLines.add(merged)
+                if (merged.length in 20..43) {
+                    val padded = merged.padEnd(44, '<')
                     mergedLines.add(padded)
                 }
             }
         }
+        
+        // Also add individual original lines
+        for (frag in fragments) {
+            mergedLines.add(frag.text)
+            if (frag.text.length in 20..43) {
+                mergedLines.add(frag.text.padEnd(44, '<'))
+            }
+        }
+        
         return mergedLines.distinct()
     }
 
@@ -416,17 +494,14 @@ object MRZParser {
         var dob = ""
         var exp = ""
 
-        val docRegex = Regex("^[A-Z]{1,2}[0-9]{6,10}$|^[0-9A-Z]{7,12}$")
-        val dateRegex = Regex("\\b\\d{2}[/-]\\d{2}[/-]\\d{4}\\b|\\b\\d{4}[/-]\\d{2}[/-]\\d{2}\\b|\\b\\d{6}\\b")
-
         val allWords = lines.flatMap { it.split("\\s+".toRegex()) }
             .map { it.replace("[^A-Z0-9]".toRegex(), "") }
             .filter { it.isNotEmpty() }
 
-        docNum = allWords.firstOrNull { docRegex.matches(it) } ?: ""
+        docNum = allWords.firstOrNull { MRZPatterns.GENERAL_DOC_REGEX.matches(it) } ?: ""
 
         val dateMatches = lines.flatMap { line ->
-            dateRegex.findAll(line).map { it.value }
+            MRZPatterns.GENERAL_DATE_REGEX.findAll(line).map { it.value }
         }.toList()
 
         if (dateMatches.isNotEmpty()) {

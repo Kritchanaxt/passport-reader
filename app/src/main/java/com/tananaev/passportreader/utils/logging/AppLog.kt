@@ -1,4 +1,4 @@
-package com.tananaev.passportreader
+package com.tananaev.passportreader.utils.logging
 
 import android.content.Context
 import android.util.Log

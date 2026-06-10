@@ -26,11 +26,11 @@
 
         <activity
             android:exported="true"
-            android:name=".ResultActivity"
+            android:name=".view.ResultActivity"
             android:screenOrientation="fullSensor" />
 
         <activity
-            android:name=".CaptureActivity"
+            android:name=".view.CaptureActivity"
             android:screenOrientation="fullSensor"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
 
