@@ -162,16 +162,29 @@ fun CameraFrameProcessor(
                                     }
                                 }
                                 
-                                val maxDetectionDim = 720f
-                                val currentMax = maxOf(activeBitmap.width, activeBitmap.height).toFloat()
-                                
-                                val baseBitmap = if (currentMax > maxDetectionDim) {
-                                    val scale = maxDetectionDim / currentMax
-                                    safeCreateScaledBitmap(activeBitmap, (activeBitmap.width * scale).toInt(), (activeBitmap.height * scale).toInt(), true).also {
-                                        activeBitmap.recycle()
+                                // Scale activeBitmap to the selected targetResolution (e.g. 720x720, 1080x1080, 1920x1920) 
+                                // so that the crop area resolution is mathematically consistent with the user's selected resolution.
+                                val targetRes = cameraController?.targetResolution
+                                val baseBitmap = if (targetRes != null) {
+                                    if (activeBitmap.width != targetRes.width || activeBitmap.height != targetRes.height) {
+                                        safeCreateScaledBitmap(activeBitmap, targetRes.width, targetRes.height, true).also {
+                                            if (activeBitmap !== rawBitmap) activeBitmap.recycle()
+                                        }
+                                    } else {
+                                        activeBitmap
                                     }
                                 } else {
-                                    activeBitmap
+                                    // Fallback to maxDetectionDim if no target resolution is set
+                                    val maxDetectionDim = 720f
+                                    val currentMax = maxOf(activeBitmap.width, activeBitmap.height).toFloat()
+                                    if (currentMax > maxDetectionDim) {
+                                        val scale = maxDetectionDim / currentMax
+                                        safeCreateScaledBitmap(activeBitmap, (activeBitmap.width * scale).toInt(), (activeBitmap.height * scale).toInt(), true).also {
+                                            if (activeBitmap !== rawBitmap) activeBitmap.recycle()
+                                        }
+                                    } else {
+                                        activeBitmap
+                                    }
                                 }
  
                                 val bitmap = if (useCropMode) {
@@ -188,7 +201,6 @@ fun CameraFrameProcessor(
          
                                     if (width > 0 && height > 0) {
                                         val cropped = Bitmap.createBitmap(baseBitmap, left, top, width, height)
-                                        if (baseBitmap !== rawBitmap) baseBitmap.recycle()
                                         
                                         if (aiMode == AiMode.OCR || aiMode == AiMode.TEXT_RECOGNITION || aiMode == AiMode.PADDLE_OCR) {
                                             val mrzTop = (height * 0.70f).toInt().coerceAtLeast(0)
@@ -285,6 +297,10 @@ fun CameraFrameProcessor(
                                             expandedBitmap.recycle()
                                         }
                                     }
+                                }
+         
+                                if (baseBitmap !== rawBitmap && baseBitmap !== bitmap && !baseBitmap.isRecycled) {
+                                    baseBitmap.recycle()
                                 }
          
                                 val elapsedInference = System.currentTimeMillis() - startInference
