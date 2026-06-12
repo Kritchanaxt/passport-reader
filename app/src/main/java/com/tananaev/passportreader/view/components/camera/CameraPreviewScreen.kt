@@ -181,11 +181,16 @@ fun CameraPreviewScreen(
             val allSizes = hardwareSizes.toMutableList()
  
             if (selectedAspectRatio == UiAspectRatio.RATIO_1_1) {
-                allSizes.add(android.util.Size(720, 720))
-                allSizes.add(android.util.Size(1080, 1080))
-                allSizes.add(android.util.Size(1440, 1440))
-                allSizes.add(android.util.Size(1920, 1920))
-                allSizes.add(android.util.Size(2160, 2160))
+                predefinedResolutionsByRatio[UiAspectRatio.RATIO_1_1]?.forEach { resStr ->
+                    val parts = resStr.split("x")
+                    if (parts.size == 2) {
+                        val w = parts[0].toIntOrNull()
+                        val h = parts[1].toIntOrNull()
+                        if (w != null && h != null) {
+                            allSizes.add(android.util.Size(w, h))
+                        }
+                    }
+                }
             }
  
             val targetRatio = selectedAspectRatio.value
@@ -214,7 +219,8 @@ fun CameraPreviewScreen(
  
             val cleanSizes = normalized.filter { size ->
                 size.width % 8 == 0 && size.height % 8 == 0 &&
-                size.width != 1088 && size.height != 1088
+                size.width != 1088 && size.height != 1088 &&
+                size.width >= 720 && size.height >= 720
             }
             val finalResolutions = cleanSizes.distinct().sortedByDescending { it.width * it.height }
             onAvailableResolutionsChange(finalResolutions)

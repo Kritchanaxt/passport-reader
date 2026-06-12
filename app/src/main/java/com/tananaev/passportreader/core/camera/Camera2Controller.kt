@@ -337,9 +337,16 @@ class Camera2Controller(
                     } ?: availableJpegSizes.first()
                 }
             } else {
-                 val validResolutions = getResolutionsForAspectRatio(getActiveAspectRatio())
-                 val supportedValid = validResolutions.mapNotNull { it.size }.filter { availableJpegSizes.contains(it) }
-                 supportedValid.minByOrNull { it.width * it.height } ?: availableJpegSizes.last()
+                val activeAR = getActiveAspectRatio()
+                val targetRatio = activeAR.value ?: (4f / 3f)
+                val targetRatioNormalized = if (targetRatio < 1f) 1f / targetRatio else targetRatio
+
+                val tolerance = 0.05
+                val matched = availableJpegSizes.filter {
+                    val ratio = it.width.toFloat() / it.height.toFloat()
+                    Math.abs(ratio - targetRatioNormalized) < tolerance
+                }
+                matched.maxByOrNull { it.width * it.height } ?: availableJpegSizes.first()
             }
  
             Log.d(TAG, "Selected capture size: $finalCaptureSize")
@@ -519,7 +526,11 @@ class Camera2Controller(
         val scaleXRelative = (targetScale * pWidth) / viewWidth
         val scaleYRelative = (targetScale * pHeight) / viewHeight
         
-        matrix.setScale(scaleXRelative, scaleYRelative, centerX, centerY)
+        if (swapDimensions) {
+            matrix.setScale(scaleYRelative, scaleXRelative, centerX, centerY)
+        } else {
+            matrix.setScale(scaleXRelative, scaleYRelative, centerX, centerY)
+        }
         
         // 2. Rotate the preview content to compensate for display rotation.
         if (displayRotation != 0) {

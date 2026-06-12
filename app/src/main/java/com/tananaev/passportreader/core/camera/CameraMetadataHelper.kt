@@ -131,7 +131,7 @@ object CameraMetadataHelper {
 
             (jpegSizes + previewSizes)
                 .distinctBy { "${it.width}x${it.height}" }
-                .filter { Math.min(it.width, it.height) >= 480 }
+                .filter { Math.min(it.width, it.height) >= 720 }
         } catch(e: Exception) { emptyList() }
     }
 }

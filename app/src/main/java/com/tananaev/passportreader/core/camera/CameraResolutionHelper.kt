@@ -73,7 +73,7 @@ object CameraResolutionHelper {
             maxFinalH = (maxFinalW / targetAR).roundToInt()
         }
 
-        if (maxFinalW >= 480 && maxFinalH >= 480) {
+        if (maxFinalW >= 720 && maxFinalH >= 720) {
             val maxForArText = "Max for AR (${maxFinalW}x${maxFinalH})"
             resolutionItems.add(ResolutionItem(null, maxForArText))
         }
@@ -88,7 +88,7 @@ object CameraResolutionHelper {
                     val height = parts[1].toInt()
                     val candidateSize = Size(width, height)
 
-                    if (candidateSize.width < 480 || candidateSize.height < 480) return@forEach
+                    if (candidateSize.width < 720 || candidateSize.height < 720) return@forEach
 
                     val isSupported = candidateSize.width <= maxFinalW && candidateSize.height <= maxFinalH
                     val isWithinFrontCamLimit = if (isFrontCamera) {
