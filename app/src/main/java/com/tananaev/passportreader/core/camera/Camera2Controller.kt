@@ -5,7 +5,10 @@ import com.tananaev.passportreader.utils.UiAspectRatio
 import com.tananaev.passportreader.utils.ResolutionItem
 import com.tananaev.passportreader.utils.predefinedResolutionsByRatio
 import com.tananaev.passportreader.features.camera.SoftwareAutoFramingController
- 
+import com.tananaev.passportreader.core.camera.CameraMetadataHelper
+import com.tananaev.passportreader.core.camera.CameraResolutionHelper
+import com.tananaev.passportreader.core.camera.CameraInfo
+
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.ImageFormat
@@ -78,29 +81,15 @@ class Camera2Controller(
         }
  
     fun isCroppingNeeded(): Boolean {
-        val isLandscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        return !isLandscape && (aspectRatio == UiAspectRatio.RATIO_16_9 || aspectRatio == UiAspectRatio.RATIO_4_3)
+        return CameraResolutionHelper.isCroppingNeeded(context, aspectRatio)
     }
  
     fun getActiveAspectRatio(): UiAspectRatio {
-        return if (isCroppingNeeded()) {
-            when (aspectRatio) {
-                UiAspectRatio.RATIO_16_9 -> UiAspectRatio.RATIO_9_16
-                UiAspectRatio.RATIO_4_3 -> UiAspectRatio.RATIO_3_4
-                else -> aspectRatio
-            }
-        } else {
-            aspectRatio
-        }
+        return CameraResolutionHelper.getActiveAspectRatio(context, aspectRatio)
     }
  
     fun getActiveResolution(selectedRes: Size?): Size? {
-        if (selectedRes == null) return null
-        return if (isCroppingNeeded()) {
-            Size(min(selectedRes.width, selectedRes.height), max(selectedRes.width, selectedRes.height))
-        } else {
-            selectedRes
-        }
+        return CameraResolutionHelper.getActiveResolution(context, aspectRatio, selectedRes)
     }
  
     // Logic from OutputSettingsDialogFragment
@@ -329,19 +318,23 @@ class Camera2Controller(
  
             val activeResolution = getActiveResolution(targetResolution)
             val finalCaptureSize = if (activeResolution != null) {
-                if (availableJpegSizes.contains(activeResolution)) {
-                    activeResolution
+                val targetRatio = max(activeResolution.width, activeResolution.height).toFloat() /
+                                  min(activeResolution.width, activeResolution.height).toFloat()
+
+                val tolerance = 0.05
+                val matched = availableJpegSizes.filter {
+                    val ratio = it.width.toFloat() / it.height.toFloat()
+                    Math.abs(ratio - targetRatio) < tolerance
+                }
+                if (matched.isNotEmpty()) {
+                    // Always select the largest matching resolution to prevent sensor mode crop/zoom
+                    matched.maxByOrNull { it.width * it.height }!!
                 } else {
-                    val targetArea = activeResolution.width * activeResolution.height
-                    val targetRatio = activeResolution.width.toFloat() / activeResolution.height.toFloat()
- 
+                    // Fallback to size with closest aspect ratio
                     availableJpegSizes.minByOrNull { size ->
                         val ratio = size.width.toFloat() / size.height.toFloat()
-                        val ratioDiff = Math.abs(ratio - targetRatio)
-                        val area = size.width * size.height
- 
-                        if (area >= targetArea) ratioDiff else ratioDiff + 100f
-                    } ?: availableJpegSizes.last()
+                        Math.abs(ratio - targetRatio)
+                    } ?: availableJpegSizes.first()
                 }
             } else {
                  val validResolutions = getResolutionsForAspectRatio(getActiveAspectRatio())
@@ -470,102 +463,18 @@ class Camera2Controller(
             cameraOpenCloseLock.release()
         }
     }
- 
+
     fun getResolutionsForAspectRatio(aspectRatio: UiAspectRatio): List<ResolutionItem> {
-        if (characteristics == null) return emptyList()
- 
-        val resolutionItems = mutableListOf<ResolutionItem>()
-        val sourceW = maxSensorProcessingSize.width
-        val sourceH = maxSensorProcessingSize.height
-        val targetAR = aspectRatio.value ?: (sourceW.toFloat() / sourceH.toFloat())
- 
-        var maxFinalW: Int
-        var maxFinalH: Int
- 
-        if (aspectRatio.isPortraitDefault) {
-            val canvasW = min(sourceW, sourceH)
-            val canvasH = max(sourceW, sourceH)
-            val canvasAR = canvasW.toFloat() / canvasH.toFloat()
- 
-            if (canvasAR > targetAR) {
-                maxFinalH = canvasH
-                maxFinalW = (canvasH * targetAR).roundToInt()
-            } else {
-                maxFinalW = canvasW
-                maxFinalH = (canvasW / targetAR).roundToInt()
-            }
-        } else {
-            maxFinalW = min(sourceW, sourceH)
-            maxFinalH = (maxFinalW / targetAR).roundToInt()
-        }
- 
-        if (maxFinalW >= 480 && maxFinalH >= 480) {
-            val maxForArText = "Max for AR (${maxFinalW}x${maxFinalH})"
-            resolutionItems.add(ResolutionItem(null, maxForArText))
-        }
- 
-        val resolutionStrings = predefinedResolutionsByRatio[aspectRatio] ?: emptyList()
- 
-        resolutionStrings.forEach { resString ->
-            try {
-                val parts = resString.split("x")
-                if (parts.size == 2) {
-                    val width = parts[0].toInt()
-                    val height = parts[1].toInt()
-                    val candidateSize = Size(width, height)
- 
-                    if (candidateSize.width < 480 || candidateSize.height < 480) return@forEach
- 
-                    val isSupported = if (aspectRatio == UiAspectRatio.RATIO_1_1 && candidateSize.width == 1920 && candidateSize.height == 1920) {
-                        true
-                    } else if (aspectRatio.isPortraitDefault) {
-                        candidateSize.width <= maxFinalW && candidateSize.height <= maxFinalH
-                    } else {
-                        candidateSize.width <= maxFinalW && candidateSize.height <= maxFinalH
-                    }
- 
-                    val isWithinFrontCamLimit = if (isFrontCamera) {
-                        (candidateSize.width * candidateSize.height) <= (2160L * 2160L)
-                    } else {
-                        true
-                    }
- 
-                    if (isSupported && isWithinFrontCamLimit) {
-                        resolutionItems.add(ResolutionItem(candidateSize, resString))
-                    }
-                }
-            } catch (e: NumberFormatException) {
-                Log.e(TAG, "Could not parse resolution string: $resString", e)
-            }
-        }
- 
-        return resolutionItems.distinctBy { it.displayText }
+        return CameraResolutionHelper.getResolutionsForAspectRatio(
+            characteristics,
+            isFrontCamera,
+            maxSensorProcessingSize,
+            aspectRatio
+        )
     }
  
     private fun getOptimalPreviewSize(sizes: Array<Size>, targetSize: Size): Size {
-        val targetW = targetSize.width
-        val targetH = targetSize.height
-        val targetRatio = max(targetW, targetH).toDouble() / min(targetW, targetH).toDouble()
-
-        // 1. Find sizes that match aspect ratio exactly or closely (normalized to landscape)
-        val tolerance = 0.05
-        val matchedAspect = sizes.filter {
-            val ratio = max(it.width, it.height).toDouble() / min(it.width, it.height).toDouble()
-            Math.abs(ratio - targetRatio) < tolerance
-        }
-
-        if (matchedAspect.isNotEmpty()) {
-            // Pick largest size that doesn't exceed 1080p for preview performance
-            return matchedAspect.filter { it.width <= 1920 && it.height <= 1080 }
-                .maxByOrNull { it.width * it.height }
-                ?: matchedAspect.maxByOrNull { it.width * it.height }!!
-        }
-
-        // 2. If no exact ratio match, find one closest to the ratio
-        return sizes.minByOrNull {
-            val ratio = max(it.width, it.height).toDouble() / min(it.width, it.height).toDouble()
-            Math.abs(ratio - targetRatio)
-        } ?: sizes[0]
+        return CameraResolutionHelper.getOptimalPreviewSize(sizes, targetSize)
     }
  
     private fun configureTransform(viewWidth: Int, viewHeight: Int) {
@@ -576,39 +485,51 @@ class Camera2Controller(
         val matrix = android.graphics.Matrix()
         
         val viewRect = android.graphics.RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        val bufferRect = android.graphics.RectF(0f, 0f, previewSize.height.toFloat(), previewSize.width.toFloat())
         val centerX = viewRect.centerX()
         val centerY = viewRect.centerY()
         
-        Log.d(TAG, "configureTransform: viewSize=${viewWidth}x${viewHeight}, previewSize=${previewSize.width}x${previewSize.height}, rotation=$rotation")
-
-        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
-            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
-            matrix.setRectToRect(viewRect, bufferRect, android.graphics.Matrix.ScaleToFit.FILL)
-            val scale = max(
-                viewHeight.toFloat() / previewSize.height,
-                viewWidth.toFloat() / previewSize.width
-            )
-            matrix.postScale(scale, scale, centerX, centerY)
-            matrix.postRotate((90 * (rotation - 2)).toFloat(), centerX, centerY)
-        } else if (Surface.ROTATION_180 == rotation) {
-            matrix.postRotate(180f, centerX, centerY)
+        val sensorOrientation = characteristics?.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+        val displayRotation = when (rotation) {
+            Surface.ROTATION_0 -> 0
+            Surface.ROTATION_90 -> 90
+            Surface.ROTATION_180 -> 180
+            Surface.ROTATION_270 -> 270
+            else -> 0
+        }
+        
+        // Calculate the relative rotation of the sensor compared to the display
+        val relativeRotation = if (isFrontCamera) {
+            (sensorOrientation + displayRotation) % 360
         } else {
-            // ROTATION_0 (Natural orientation of the device)
-            val isViewLandscape = viewWidth > viewHeight
-            val isPreviewLandscape = previewSize.width > previewSize.height
-            
-            val pWidth = if (isPreviewLandscape == isViewLandscape) previewSize.width else previewSize.height
-            val pHeight = if (isPreviewLandscape == isViewLandscape) previewSize.height else previewSize.width
-            
-            val scaleX = viewWidth.toFloat() / pWidth
-            val scaleY = viewHeight.toFloat() / pHeight
-            val targetScale = max(scaleX, scaleY)
-            
-            val scaleXRelative = (targetScale * pWidth) / viewWidth
-            val scaleYRelative = (targetScale * pHeight) / viewHeight
-            
-            matrix.setScale(scaleXRelative, scaleYRelative, centerX, centerY)
+            (sensorOrientation - displayRotation + 360) % 360
+        }
+        
+        // Determine if we need to swap width/height based on relative rotation
+        val swapDimensions = relativeRotation == 90 || relativeRotation == 270
+        val pWidth = if (swapDimensions) previewSize.height.toFloat() else previewSize.width.toFloat()
+        val pHeight = if (swapDimensions) previewSize.width.toFloat() else previewSize.height.toFloat()
+        
+        Log.d(TAG, "configureTransform: viewSize=${viewWidth}x${viewHeight}, previewSize=${previewSize.width}x${previewSize.height}, rotation=$rotation, sensorOrientation=$sensorOrientation, relativeRotation=$relativeRotation, swapDimensions=$swapDimensions")
+
+        // 1. Calculate scale factor to fill the TextureView (Center Crop) without distortion
+        val scaleX = viewWidth.toFloat() / pWidth
+        val scaleY = viewHeight.toFloat() / pHeight
+        val targetScale = max(scaleX, scaleY)
+        
+        val scaleXRelative = (targetScale * pWidth) / viewWidth
+        val scaleYRelative = (targetScale * pHeight) / viewHeight
+        
+        matrix.setScale(scaleXRelative, scaleYRelative, centerX, centerY)
+        
+        // 2. Rotate the preview content to compensate for display rotation.
+        if (displayRotation != 0) {
+            val rotationDegrees = when (displayRotation) {
+                90 -> 270f
+                180 -> 180f
+                270 -> 90f
+                else -> 0f
+            }
+            matrix.postRotate(rotationDegrees, centerX, centerY)
         }
         
         if (softwareAutoFramingController.isActive) {
@@ -623,7 +544,6 @@ class Camera2Controller(
                 softwareAutoFramingController.currentPanY
             )
         }
-
         textureView.setTransform(matrix)
     }
  
@@ -831,144 +751,7 @@ class Camera2Controller(
     }
  
     fun getAvailableCameras(): List<String> {
-        return try {
-            cameraManager.cameraIdList.toList()
-        } catch(e:Exception) { emptyList() }
-    }
- 
-    data class CameraInfo(
-        val title: String,
-        val javaCameraId: String, // mapped physical/logical representation
-        val cameraId: String,
-        val format: Int = ImageFormat.JPEG,
-        val cameraType: String,
-        val iconResId: Int = 0,
-        val isAvailable: Boolean = true,
-        val physicalCameraIds: List<String> = emptyList()
-    )
- 
-    @SuppressLint("InlinedApi")
-    fun enumerateCameras(): List<CameraInfo> {
-        Log.d(TAG, "Starting camera enumeration...")
-        val detectedCamerasMap = mutableMapOf<String, CameraInfo>()
-        val allCameraIds = try {
-            cameraManager.cameraIdList
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get camera ID list", e)
-            emptyArray<String>()
-        }
-        val numberOfActualCameras = allCameraIds.size
- 
-        Log.i(TAG, "Total camera IDs: $numberOfActualCameras. IDs: ${allCameraIds.joinToString()}")
- 
-        val frontCameraIds = allCameraIds.filter { id ->
-            try {
-                cameraManager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
-            } catch (e: Exception) {
-                false
-            }
-        }
-        val hasMultipleFrontCameras = frontCameraIds.size > 1
-        Log.d(TAG, "Device has multiple front cameras: $hasMultipleFrontCameras (Total front cams: ${frontCameraIds.size})")
- 
-        val ultraWideFocalLengthThreshold = 3.0f
-        val telephotoFocalLengthThreshold = 7.0f
- 
-        allCameraIds.forEach { id ->
-            try {
-                val characteristics = cameraManager.getCameraCharacteristics(id)
-                val orientation = characteristics.get(CameraCharacteristics.LENS_FACING)
-                val capabilities = characteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES) ?: IntArray(0)
-                val focalLengths = characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
- 
-                val isLogicalMultiCamera = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                    capabilities.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA)
-                } else false
- 
-                val physicalCameraIds = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P && isLogicalMultiCamera) {
-                     characteristics.physicalCameraIds.toList()
-                } else emptyList()
- 
-                Log.i(TAG, "--- Processing Camera ID: $id ---")
-                Log.i(TAG, "  Orientation: $orientation")
-                Log.i(TAG, "  Is Logical Multi-Camera: $isLogicalMultiCamera")
- 
-                var determinedType: String? = null
-                when (orientation) {
-                    CameraCharacteristics.LENS_FACING_FRONT -> {
-                        determinedType = if (hasMultipleFrontCameras && (id == "1" || (focalLengths != null && focalLengths.any { it < ultraWideFocalLengthThreshold }))) {
-                            "Front Ultra Wide Camera"
-                        } else {
-                            "Front Camera"
-                        }
-                    }
-                    CameraCharacteristics.LENS_FACING_BACK -> {
-                        if (isLogicalMultiCamera && physicalCameraIds.isNotEmpty()) {
-                            determinedType = when (physicalCameraIds.size) {
-                                3 -> "Back Triple Camera"
-                                2 -> "Back Dual Camera"
-                                else -> "Back Multi-Camera (${physicalCameraIds.size} Lenses)"
-                            }
-                        } else {
-                            determinedType = when {
-                                focalLengths?.any { it > telephotoFocalLengthThreshold } == true -> "Back Telephoto Camera"
-                                focalLengths?.any { it < ultraWideFocalLengthThreshold } == true -> "Back Ultra Wide Camera"
-                                else -> "Back Camera"
-                            }
-                        }
-                    }
-                    CameraCharacteristics.LENS_FACING_EXTERNAL -> determinedType = "External Camera"
-                }
- 
-                if (determinedType == null) {
-                    determinedType = "Camera $id"
-                }
- 
-                detectedCamerasMap[id] = CameraInfo(
-                    title = "$determinedType (ID: $id)",
-                    javaCameraId = id,
-                    cameraId = id,
-                    cameraType = determinedType,
-                    isAvailable = true,
-                    physicalCameraIds = physicalCameraIds
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Error processing camera ID $id: ${e.message}", e)
-            }
-        }
- 
-         return detectedCamerasMap.values.sortedWith(compareBy {
-            when (it.cameraType) {
-                "Front Camera" -> 0
-                "Front Ultra Wide Camera" -> 1
-                "Back Camera" -> 2
-                "Back Triple Camera" -> 3
-                "Back Dual Camera" -> 4
-                "Back Dual Wide Camera" -> 5
-                "Back Ultra Wide Camera" -> 6
-                "Back Telephoto Camera" -> 7
-                else -> if (it.cameraType.startsWith("Back Multi-Camera")) 8 else 99
-            }
-        })
-    }
- 
-    fun getCameraResolutions(cameraId: String): List<Size> {
-        return try {
-            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
- 
-            val jpegSizes = map?.getOutputSizes(ImageFormat.JPEG)?.toList() ?: emptyList()
-            val previewSizes = map?.getOutputSizes(android.graphics.SurfaceTexture::class.java)?.toList() ?: emptyList()
- 
-            (jpegSizes + previewSizes)
-                .distinctBy { "${it.width}x${it.height}" }
-                .filter { Math.min(it.width, it.height) >= 480 }
-        } catch(e:Exception) { emptyList() }
-    }
- 
-    private fun getOptimalPreviewSize(sizes: Array<Size>, w: Int, h: Int): Size {
-         val aspectRatio = w.toDouble() / h.toDouble()
-         return sizes.maxByOrNull { it.width * it.height } ?: sizes[0]
+        return CameraMetadataHelper.getAvailableCameras(cameraManager)
     }
  
     private fun applyCameraQualityAndFocusSettings(builder: CaptureRequest.Builder) {

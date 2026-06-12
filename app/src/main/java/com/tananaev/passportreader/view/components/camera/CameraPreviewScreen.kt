@@ -44,6 +44,8 @@ import com.tananaev.passportreader.utils.UiAspectRatio
 import com.tananaev.passportreader.utils.ResolutionItem
 import com.tananaev.passportreader.utils.predefinedResolutionsByRatio
 import com.tananaev.passportreader.core.camera.Camera2Controller
+import com.tananaev.passportreader.core.camera.CameraMetadataHelper
+import com.tananaev.passportreader.core.camera.CameraInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -124,12 +126,8 @@ fun CameraPreviewScreen(
     val orientation = configuration.orientation
     var cameraController by remember { mutableStateOf<Camera2Controller?>(null) }
  
-    val availableCameras = remember {
-        val tempController = Camera2Controller(context) { _, _ -> }
-        val list = tempController.enumerateCameras()
-        tempController.close()
-        list
-    }
+    val cameraManager = remember { context.getSystemService(Context.CAMERA_SERVICE) as CameraManager }
+    val availableCameras = remember { CameraMetadataHelper.enumerateCameras(cameraManager) }
  
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showAiModeSheet by remember { mutableStateOf(false) }
@@ -179,7 +177,7 @@ fun CameraPreviewScreen(
                 }
             }
  
-            val hardwareSizes = cameraController!!.getCameraResolutions(selectedCameraId)
+            val hardwareSizes = CameraMetadataHelper.getCameraResolutions(cameraManager, selectedCameraId)
             val allSizes = hardwareSizes.toMutableList()
  
             if (selectedAspectRatio == UiAspectRatio.RATIO_1_1) {
