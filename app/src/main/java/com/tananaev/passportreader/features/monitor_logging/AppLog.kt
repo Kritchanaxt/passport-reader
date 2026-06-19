@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.tananaev.passportreader.features.monitor_logging.contracts.ILogger
 import com.tananaev.passportreader.features.monitor_logging.model.LogEntry
+import timber.log.Timber
 
 /**
  * Thread-safe, file-persisted log collector for in-app debugging.
@@ -27,6 +28,13 @@ object AppLog : ILogger {
                 Log.e("AppLog", "Failed to load logs", e)
             }
         }
+
+        // Plant Timber trees
+        val isDebug = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (isDebug) {
+            Timber.plant(Timber.DebugTree())
+        }
+        Timber.plant(LogOverlayTree())
         
         // Register uncaught exception handler
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -76,7 +84,7 @@ object AppLog : ILogger {
         currentListeners.forEach { it() }
     }
 
-    private fun addLog(level: String, tag: String, message: String, throwable: Throwable? = null) {
+    internal fun addLog(level: String, tag: String, message: String, throwable: Throwable? = null) {
         val sdf = java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.US)
         val timeStr = sdf.format(java.util.Date())
         val entry = LogEntry(timeStr, level, tag, message, throwable)
@@ -104,68 +112,57 @@ object AppLog : ILogger {
     // ──── Log implementations for direct replacement ────
 
     override fun v(tag: String, msg: String): Int {
-        Log.v(tag, msg)
-        addLog("V", tag, msg)
+        Timber.tag(tag).v(msg)
         return 0
     }
 
     override fun v(tag: String, msg: String, tr: Throwable?): Int {
-        Log.v(tag, msg, tr)
-        addLog("V", tag, msg, tr)
+        Timber.tag(tag).v(tr, msg)
         return 0
     }
 
     override fun d(tag: String, msg: String): Int {
-        Log.d(tag, msg)
-        addLog("D", tag, msg)
+        Timber.tag(tag).d(msg)
         return 0
     }
 
     override fun d(tag: String, msg: String, tr: Throwable?): Int {
-        Log.d(tag, msg, tr)
-        addLog("D", tag, msg, tr)
+        Timber.tag(tag).d(tr, msg)
         return 0
     }
 
     override fun i(tag: String, msg: String): Int {
-        Log.i(tag, msg)
-        addLog("I", tag, msg)
+        Timber.tag(tag).i(msg)
         return 0
     }
 
     override fun i(tag: String, msg: String, tr: Throwable?): Int {
-        Log.i(tag, msg, tr)
-        addLog("I", tag, msg, tr)
+        Timber.tag(tag).i(tr, msg)
         return 0
     }
 
     override fun w(tag: String, msg: String): Int {
-        Log.w(tag, msg)
-        addLog("W", tag, msg)
+        Timber.tag(tag).w(msg)
         return 0
     }
 
     override fun w(tag: String, msg: String, tr: Throwable?): Int {
-        Log.w(tag, msg, tr)
-        addLog("W", tag, msg, tr)
+        Timber.tag(tag).w(tr, msg)
         return 0
     }
 
     override fun w(tag: String, tr: Throwable?): Int {
-        Log.w(tag, tr)
-        addLog("W", tag, tr?.message ?: "", tr)
+        Timber.tag(tag).w(tr)
         return 0
     }
 
     override fun e(tag: String, msg: String): Int {
-        Log.e(tag, msg)
-        addLog("E", tag, msg)
+        Timber.tag(tag).e(msg)
         return 0
     }
 
     override fun e(tag: String, msg: String, tr: Throwable?): Int {
-        Log.e(tag, msg, tr)
-        addLog("E", tag, msg, tr)
+        Timber.tag(tag).e(tr, msg)
         return 0
     }
 
@@ -178,17 +175,7 @@ object AppLog : ILogger {
     }
 
     fun println(priority: Int, tag: String, msg: String): Int {
-        val level = when (priority) {
-            Log.VERBOSE -> "V"
-            Log.DEBUG -> "D"
-            Log.INFO -> "I"
-            Log.WARN -> "W"
-            Log.ERROR -> "E"
-            Log.ASSERT -> "A"
-            else -> "U"
-        }
-        Log.println(priority, tag, msg)
-        addLog(level, tag, msg)
+        Timber.tag(tag).log(priority, msg)
         return 0
     }
 }

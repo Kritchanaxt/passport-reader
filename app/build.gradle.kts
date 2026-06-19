@@ -124,6 +124,7 @@ dependencies {
     "googleImplementation"(libs.firebase.crashlytics)
     "googleImplementation"(libs.play.services.ads)
     "googleImplementation"(libs.play.review.ktx)
+    implementation(libs.timber)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 }
 
