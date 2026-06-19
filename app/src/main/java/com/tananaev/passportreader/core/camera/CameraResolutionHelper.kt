@@ -2,7 +2,7 @@ package com.tananaev.passportreader.core.camera
 
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
-import com.tananaev.passportreader.utils.logging.AppLog as Log
+import com.tananaev.passportreader.features.monitor_logging.AppLog as Log
 import android.util.Size
 import com.tananaev.passportreader.utils.UiAspectRatio
 import com.tananaev.passportreader.utils.ResolutionItem

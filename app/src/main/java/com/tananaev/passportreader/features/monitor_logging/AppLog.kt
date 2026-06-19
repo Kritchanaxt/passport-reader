@@ -1,14 +1,16 @@
-package com.tananaev.passportreader.utils.logging
+package com.tananaev.passportreader.features.monitor_logging
 
 import android.content.Context
 import android.util.Log
+import com.tananaev.passportreader.features.monitor_logging.contracts.ILogger
+import com.tananaev.passportreader.features.monitor_logging.model.LogEntry
 
 /**
  * Thread-safe, file-persisted log collector for in-app debugging.
  * Acts as a direct replacement/alias for android.util.Log.
  */
-object AppLog {
-    private val logs = mutableListOf<String>()
+object AppLog : ILogger {
+    private val logs = mutableListOf<LogEntry>()
     private val listeners = mutableListOf<() -> Unit>()
     private var logFile: java.io.File? = null
     private val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -19,7 +21,7 @@ object AppLog {
             try {
                 val lines = logFile!!.readLines()
                 synchronized(logs) {
-                    logs.addAll(lines.takeLast(1000))
+                    logs.addAll(lines.takeLast(1000).map { LogEntry.fromLine(it) })
                 }
             } catch (e: Exception) {
                 Log.e("AppLog", "Failed to load logs", e)
@@ -48,7 +50,7 @@ object AppLog {
         listeners.remove(listener)
     }
 
-    fun getLogs(): List<String> {
+    fun getLogs(): List<LogEntry> {
         synchronized(logs) {
             return ArrayList(logs)
         }
@@ -77,11 +79,10 @@ object AppLog {
     private fun addLog(level: String, tag: String, message: String, throwable: Throwable? = null) {
         val sdf = java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.US)
         val timeStr = sdf.format(java.util.Date())
-        val errorStr = throwable?.let { "\n${Log.getStackTraceString(it)}" } ?: ""
-        val logLine = "$timeStr $level/$tag: $message$errorStr"
+        val entry = LogEntry(timeStr, level, tag, message, throwable)
         
         synchronized(logs) {
-            logs.add(logLine)
+            logs.add(entry)
             if (logs.size > 2000) {
                 logs.removeAt(0)
             }
@@ -92,7 +93,7 @@ object AppLog {
         executor.execute {
             try {
                 logFile?.let { file ->
-                    file.appendText(logLine + "\n")
+                    file.appendText(entry.toFormattedString() + "\n")
                 }
             } catch (e: Exception) {
                 // Avoid recursive logging on disk write error
@@ -102,67 +103,67 @@ object AppLog {
 
     // ──── Log implementations for direct replacement ────
 
-    fun v(tag: String, msg: String): Int {
+    override fun v(tag: String, msg: String): Int {
         Log.v(tag, msg)
         addLog("V", tag, msg)
         return 0
     }
 
-    fun v(tag: String, msg: String, tr: Throwable?): Int {
+    override fun v(tag: String, msg: String, tr: Throwable?): Int {
         Log.v(tag, msg, tr)
         addLog("V", tag, msg, tr)
         return 0
     }
 
-    fun d(tag: String, msg: String): Int {
+    override fun d(tag: String, msg: String): Int {
         Log.d(tag, msg)
         addLog("D", tag, msg)
         return 0
     }
 
-    fun d(tag: String, msg: String, tr: Throwable?): Int {
+    override fun d(tag: String, msg: String, tr: Throwable?): Int {
         Log.d(tag, msg, tr)
         addLog("D", tag, msg, tr)
         return 0
     }
 
-    fun i(tag: String, msg: String): Int {
+    override fun i(tag: String, msg: String): Int {
         Log.i(tag, msg)
         addLog("I", tag, msg)
         return 0
     }
 
-    fun i(tag: String, msg: String, tr: Throwable?): Int {
+    override fun i(tag: String, msg: String, tr: Throwable?): Int {
         Log.i(tag, msg, tr)
         addLog("I", tag, msg, tr)
         return 0
     }
 
-    fun w(tag: String, msg: String): Int {
+    override fun w(tag: String, msg: String): Int {
         Log.w(tag, msg)
         addLog("W", tag, msg)
         return 0
     }
 
-    fun w(tag: String, msg: String, tr: Throwable?): Int {
+    override fun w(tag: String, msg: String, tr: Throwable?): Int {
         Log.w(tag, msg, tr)
         addLog("W", tag, msg, tr)
         return 0
     }
 
-    fun w(tag: String, tr: Throwable?): Int {
+    override fun w(tag: String, tr: Throwable?): Int {
         Log.w(tag, tr)
         addLog("W", tag, tr?.message ?: "", tr)
         return 0
     }
 
-    fun e(tag: String, msg: String): Int {
+    override fun e(tag: String, msg: String): Int {
         Log.e(tag, msg)
         addLog("E", tag, msg)
         return 0
     }
 
-    fun e(tag: String, msg: String, tr: Throwable?): Int {
+    override fun e(tag: String, msg: String, tr: Throwable?): Int {
         Log.e(tag, msg, tr)
         addLog("E", tag, msg, tr)
         return 0

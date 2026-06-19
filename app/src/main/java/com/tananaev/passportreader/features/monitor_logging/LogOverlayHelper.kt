@@ -1,4 +1,4 @@
-package com.tananaev.passportreader.utils.logging
+package com.tananaev.passportreader.features.monitor_logging
 
 import android.animation.ObjectAnimator
 import android.annotation.SuppressLint
@@ -33,16 +33,18 @@ import androidx.cardview.widget.CardView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import com.tananaev.passportreader.features.monitor_logging.contracts.ILogOverlay
+import com.tananaev.passportreader.features.monitor_logging.model.LogEntry
 
 /**
  * Attaches a premium light-themed floating developer log overlay button (with the Android icon) to any Activity.
  * Opens a highly polished, developer-friendly log dashboard with colored severity blocks.
  */
-object LogOverlayHelper {
+object LogOverlayHelper : ILogOverlay {
     private const val TAG = "LogOverlayHelper"
 
     @SuppressLint("ClickableViewAccessibility")
-    fun attach(activity: Activity) {
+    override fun attach(activity: Activity) {
         val root = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
 
         // Prevent attaching multiple overlays to the same activity
@@ -109,7 +111,7 @@ object LogOverlayHelper {
 
         val updateBadge = {
             activity.runOnUiThread {
-                val hasErrors = AppLog.getLogs().any { it.contains(" E/") || it.contains(" W/") }
+                val hasErrors = AppLog.getLogs().any { it.level == "E" || it.level == "W" }
                 badge.visibility = if (hasErrors) View.VISIBLE else View.GONE
             }
         }
@@ -248,7 +250,7 @@ object LogOverlayHelper {
         btnStyle(copyBtn, "Copy All", "#10B981", Color.WHITE) // Emerald Green 500
         copyBtn.setOnClickListener {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val allLogsText = AppLog.getLogs().joinToString("\n")
+            val allLogsText = AppLog.getLogs().joinToString("\n") { it.toFormattedString() }
             val clip = ClipData.newPlainText("Console Logs", allLogsText)
             clipboard.setPrimaryClip(clip)
             Toast.makeText(context, "Copied to clipboard!", Toast.LENGTH_SHORT).show()
@@ -404,20 +406,22 @@ object LogOverlayHelper {
 
             logContainer.removeAllViews()
 
-            val filtered = rawLogs.filter { line ->
+            val filtered = rawLogs.filter { entry ->
                 val levelMatch = when (selectedFilter) {
-                    "INFO" -> line.contains(" I/")
-                    "WARN" -> line.contains(" W/")
-                    "ERROR" -> line.contains(" E/")
+                    "INFO" -> entry.level == "I"
+                    "WARN" -> entry.level == "W"
+                    "ERROR" -> entry.level == "E"
                     else -> true
                 }
-                val searchMatch = query.isEmpty() || line.lowercase(java.util.Locale.US).contains(query)
+                val searchMatch = query.isEmpty() || 
+                        entry.message.lowercase(java.util.Locale.US).contains(query) ||
+                        entry.tag.lowercase(java.util.Locale.US).contains(query)
                 levelMatch && searchMatch
             }
 
-            for (line in filtered) {
+            for (entry in filtered) {
                 val tv = TextView(context).apply {
-                    text = line
+                    text = entry.toFormattedString()
                     textSize = 10.5f
                     typeface = Typeface.MONOSPACE
                     val padH = (10 * density).toInt()
@@ -425,22 +429,22 @@ object LogOverlayHelper {
                     setPadding(padH, padV, padH, padV)
                     
                     // Style lines by log level with premium backgrounds and text colors
-                    when {
-                        line.contains(" E/") -> {
+                    when (entry.level) {
+                        "E" -> {
                             setTextColor(Color.parseColor("#DC2626")) // Rose 600
                             background = GradientDrawable().apply {
                                 cornerRadius = 4 * density
                                 setColor(Color.parseColor("#FEF2F2")) // Rose 50 background
                             }
                         }
-                        line.contains(" W/") -> {
+                        "W" -> {
                             setTextColor(Color.parseColor("#D97706")) // Amber 600
                             background = GradientDrawable().apply {
                                 cornerRadius = 4 * density
                                 setColor(Color.parseColor("#FFFBEB")) // Amber 50 background
                             }
                         }
-                        line.contains(" D/") -> {
+                        "D" -> {
                             setTextColor(Color.parseColor("#059669")) // Emerald 600
                             background = GradientDrawable().apply {
                                 cornerRadius = 4 * density

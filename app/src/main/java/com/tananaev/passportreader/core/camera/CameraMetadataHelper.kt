@@ -4,7 +4,7 @@ import android.annotation.SuppressLint
 import android.graphics.ImageFormat
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
-import com.tananaev.passportreader.utils.logging.AppLog as Log
+import com.tananaev.passportreader.features.monitor_logging.AppLog as Log
 import android.util.Size
 
 object CameraMetadataHelper {

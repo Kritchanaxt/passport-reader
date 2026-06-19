@@ -5,8 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
-import com.tananaev.passportreader.utils.logging.AppLog as Log
-import com.tananaev.passportreader.utils.logging.LogOverlayHelper
+import com.tananaev.passportreader.features.monitor_logging.AppLog as Log
+import com.tananaev.passportreader.features.monitor_logging.LogOverlayHelper
 import com.tananaev.passportreader.features.mrz.MRZParser
 import android.widget.Toast
 import androidx.activity.compose.setContent

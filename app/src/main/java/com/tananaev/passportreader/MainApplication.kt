@@ -18,7 +18,7 @@ package com.tananaev.passportreader
 import android.app.Application
 import org.spongycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
-import com.tananaev.passportreader.utils.logging.AppLog
+import com.tananaev.passportreader.features.monitor_logging.AppLog
 
 class MainApplication : Application() {
     override fun onCreate() {

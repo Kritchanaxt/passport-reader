@@ -42,7 +42,7 @@ data class ResolutionItem(val size: Size?, val displayText: String) {
  
 val predefinedResolutionsByRatio: Map<UiAspectRatio, List<String>> = mapOf(
     UiAspectRatio.RATIO_1_1 to listOf(
-        "720x720", "1080x1080", "1280x1280", "1440x1440", "1920x1920", "2160x2160"
+        "720x720", "1080x1080", "1280x1280", "1440x1440", "1920x1920", "2160x2160", "2560x2560"
     ).distinct().sortedWith(compareByDescending { it.split("x").first().toInt() }),
  
     UiAspectRatio.RATIO_4_3 to listOf(

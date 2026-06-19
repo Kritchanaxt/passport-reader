@@ -32,8 +32,8 @@ import android.preference.PreferenceManager
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Base64
-import com.tananaev.passportreader.utils.logging.AppLog as Log
-import com.tananaev.passportreader.utils.logging.LogOverlayHelper
+import com.tananaev.passportreader.features.monitor_logging.AppLog as Log
+import com.tananaev.passportreader.features.monitor_logging.LogOverlayHelper
 import com.tananaev.passportreader.features.sunmi.SunmiPaySdkManager
 import com.tananaev.passportreader.features.sunmi.SunmiCardService
 import com.tananaev.passportreader.R
